@@ -59,7 +59,61 @@
 
 (defvar org-babel-haskell-eoe "\"org-babel-haskell-eoe\"")
 
+(defcustom org-babel-haskell-command
+  (if (boundp 'maxima-command) maxima-command "runhaskell")
+  "Command used to run haskell files on the shell."
+  :group 'org-babel
+  :type 'string)
+
+(defun org-babel-haskell-expand (body params)
+  "Expand a block of Maxima code according to its header arguments."
+  (let ((vars (mapcar #'cdr (org-babel-get-header params :var))))
+    (mapconcat 'identity
+	       (list
+		;; graphic output
+		(let ((graphic-file (ignore-errors (org-babel-graphical-output-file params))))
+		  (if graphic-file
+		      "" ; Put graphic stuff for haskell-diagrams
+		    ""))
+		;; variables
+		(mapconcat 'org-babel-haskell-var-to-haskell vars "\n")
+		;; body
+		body)
+	       "\n")))
+
 (defun org-babel-execute:haskell (body params)
+  "Execute a block of Haskell program entries with org-babel.
+This function is called by `org-babel-execute-src-block'."
+  (message "executing Haskell source code block")
+  (let ((result-params (split-string (or (cdr (assoc :results params)) "")))
+	(result
+	 (let* ((cmdline (or (cdr (assoc :cmdline params)) ""))
+		(in-file (org-babel-temp-file "haskell-" ".hs"))
+		(cmd (format "%s %s"
+			     org-babel-haskell-command in-file cmdline)))
+	   (with-temp-file in-file (insert (org-babel-haskell-expand body params)))
+	   (message cmd)
+           ;; " | grep -v batch | grep -v 'replaced' | sed '/^$/d' "
+	   (let ((raw (org-babel-eval cmd "")))
+             (mapconcat
+              #'identity
+              (delq nil
+                    (mapcar (lambda (line)
+                              (unless (or (string-match "batch" line)
+                                          (string-match "^rat: replaced .*$" line)
+                                          (string-match "^;;; Loading #P" line)
+                                          (= 0 (length line)))
+                                line))
+                            (split-string raw "[\r\n]"))) "\n")))))
+    (if (ignore-errors (org-babel-graphical-output-file params))
+	nil
+      (org-babel-result-cond result-params
+	result
+	(let ((tmp-file (org-babel-temp-file "haskell-res-")))
+	  (with-temp-file tmp-file (insert result))
+	  (org-babel-import-elisp-from-file tmp-file))))))
+
+(defun org-babel-execute:haskell2 (body params)
   "Execute a block of Haskell code."
   (let ((tangle (cdr (assoc :tangle params))))
     (if (not (string= tangle "no"))
