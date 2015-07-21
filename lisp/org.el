@@ -10622,7 +10622,7 @@ Org-mode syntax."
   (let ((reference-buffer (or reference-buffer (current-buffer))))
     (with-temp-buffer
       (let ((org-inhibit-startup (not reference-buffer)))
-	(org-mode)
+	(delay-mode-hooks (org-mode))
 	(insert s)
 	(goto-char (point-min))
 	(when reference-buffer

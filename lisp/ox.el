@@ -3260,7 +3260,7 @@ storing and resolving footnotes.  It is created automatically."
 			      (org-export--inclusion-absolute-lines
 			       file location only-contents lines)
 			    lines)))
-		     (org-mode)
+		     (delay-mode-hooks (org-mode))
                      (insert
 		      (org-export--prepare-file-contents
 		       file lines ind minlevel
