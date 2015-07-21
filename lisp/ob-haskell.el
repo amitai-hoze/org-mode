@@ -62,42 +62,42 @@
 (defun org-babel-execute:haskell (body params)
   "Execute a block of Haskell code."
   (let ((tangle (cdr (assoc :tangle params))))
-    (if tangle
+    (if (not (string= tangle "no"))
 	(save-match-data
 	  (let* ((filename (expand-file-name (car (org-babel-tangle '(4)))))
-	    (temp (string-match "\\(^.*\\)/\\([^/].*\\)\\.hs$" filename))
-	    (executable (match-string 2 filename))
-	    (path (match-string 1 filename))
-	    (default-directory filename)
-	    (temp (call-process-shell-command (concat "cd " path)))
-	    (results (split-string (shell-command-to-string (concat path "/" executable)) "\n")))
+		 (temp (string-match "\\(^.*\\)/\\([^/].*\\)\\.hs$" filename))
+		 (executable (match-string 2 filename))
+		 (path (match-string 1 filename))
+		 (default-directory filename)
+		 (temp (call-process-shell-command (concat "cd " path)))
+		 (results (reverse (split-string (shell-command-to-string (concat path "/" executable)) "\n"))))
 	    (org-babel-haskell-process-results results params)))
-	(let* ((vars (mapcar #'cdr (org-babel-get-header params :var)))
-	       (session (cdr (assoc :session params)))
-	       (full-body (org-babel-expand-body:generic
-			   body params
-			   (org-babel-variable-assignments:haskell params)))
-	       (body-lines (split-string full-body "\n"))
-	       (body-head (mapconcat #'identity (butlast body-lines 1) "\n"))
-	       (body-last (mapconcat #'identity (last body-lines 1) "\n"))
-	       (session (org-babel-haskell-initiate-session session params))
-	       (raw
-		    (org-babel-comint-with-output
-			(session org-babel-haskell-eoe t full-body)
-		      (insert (org-babel-trim body-head))
-		      (comint-send-input nil t)
-		      (insert (org-babel-trim "\"some_string\"\n"))
-		      (comint-send-input nil t)
-		      (insert (org-babel-trim body-last))
-		      (comint-send-input nil t)
-		      (insert org-babel-haskell-eoe)
-		      (comint-send-input nil t)))
-	       (results
-		(mapcar
-		 #'org-babel-haskell-read-string
-		 (cdr (member org-babel-haskell-eoe
-			      (reverse (mapcar #'org-babel-trim raw)))))))
-	  (org-babel-haskell-process-results results params)))))
+      (let* ((vars (mapcar #'cdr (org-babel-get-header params :var)))
+	     (session (cdr (assoc :session params)))
+	     (full-body (org-babel-expand-body:generic
+			 body params
+			 (org-babel-variable-assignments:haskell params)))
+	     (body-lines (split-string full-body "\n"))
+	     (body-head (mapconcat #'identity (butlast body-lines 1) "\n"))
+	     (body-last (mapconcat #'identity (last body-lines 1) "\n"))
+	     (session (org-babel-haskell-initiate-session session params))
+	     (raw
+	      (org-babel-comint-with-output
+		  (session org-babel-haskell-eoe t full-body)
+		(insert (org-babel-trim body-head))
+		(comint-send-input nil t)
+		(insert (org-babel-trim "\"some_string\"\n"))
+		(comint-send-input nil t)
+		(insert (org-babel-trim body-last))
+		(comint-send-input nil t)
+		(insert org-babel-haskell-eoe)
+		(comint-send-input nil t)))
+	     (results
+	      (mapcar
+	       #'org-babel-haskell-read-string
+	       (cdr (member org-babel-haskell-eoe
+			    (reverse (mapcar #'org-babel-trim raw)))))))
+	(org-babel-haskell-process-results results params)))))
 
 (defun org-babel-haskell-process-results(results params)
   (let ((result-type (cdr (assoc :result-type params))))
