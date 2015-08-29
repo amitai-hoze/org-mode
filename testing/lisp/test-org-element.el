@@ -1628,17 +1628,22 @@ e^{i\\pi}+1=0
        (equal (org-element-property :path (org-element-context)) file))))
   ;; ... multi-line link.
   (should
-   (equal "//orgmode.org"
-	  (org-test-with-temp-text "[[http://orgmode.\norg]]"
+   (equal "ls *.org"
+	  (org-test-with-temp-text "[[shell:ls\n*.org]]"
 	    (org-element-property :path (org-element-context)))))
   ;; Plain link.
   (should
    (org-test-with-temp-text "A link: http://orgmode.org"
      (org-element-map (org-element-parse-buffer) 'link 'identity)))
-  ;; Angular link.
+  ;; Angular link.  Follow RFC 3986.
   (should
-   (org-test-with-temp-text "A link: <http://orgmode.org>"
-     (org-element-map (org-element-parse-buffer) 'link 'identity nil t)))
+   (eq 'link
+       (org-test-with-temp-text "A link: <point><http://orgmode.org>"
+	 (org-element-type (org-element-context)))))
+  (should
+   (equal "//orgmode.org"
+       (org-test-with-temp-text "A link: <point><http://orgmode\n.org>"
+	 (org-element-property :path (org-element-context)))))
   ;; Link abbreviation.
   (should
    (equal "http"
@@ -2937,29 +2942,34 @@ DEADLINE: <2012-03-29 thu.> SCHEDULED: <2012-03-29 thu.> CLOSED: [2012-03-29 thu
 
 (ert-deftest test-org-element/link-interpreter ()
   "Test link interpreter."
-  ;; 1. Links targeted from a radio target.
+  ;; Links targeted from a radio target.
   (should (equal (let ((org-target-link-regexp "radio-target"))
 		   (org-test-parse-and-interpret "a radio-target"))
 		 "a radio-target\n"))
-  ;; 2. Regular links.
-  ;;
-  ;; 2.1. Without description.
+  ;; Links without description.
   (should (equal (org-test-parse-and-interpret "[[http://orgmode.org]]")
 		 "[[http://orgmode.org]]\n"))
-  ;; 2.2. With a description.
+  ;; Links with a description.
   (should (equal (org-test-parse-and-interpret
 		  "[[http://orgmode.org][Org mode]]")
 		 "[[http://orgmode.org][Org mode]]\n"))
-  ;; 2.3. Id links.
+  ;; File links.
+  (should
+   (equal (org-test-parse-and-interpret "[[file+emacs:todo.org]]")
+	  "[[file+emacs:todo.org]]\n"))
+  (should
+   (equal (org-test-parse-and-interpret "[[file:todo.org::*task]]")
+	  "[[file:todo.org::*task]]\n"))
+  ;; Id links.
   (should (equal (org-test-parse-and-interpret "[[id:aaaa]]") "[[id:aaaa]]\n"))
-  ;; 2.4. Custom-id links.
+  ;; Custom-id links.
   (should (equal (org-test-parse-and-interpret "[[#id]]") "[[#id]]\n"))
-  ;; 2.5 Code-ref links.
+  ;; Code-ref links.
   (should (equal (org-test-parse-and-interpret "[[(ref)]]") "[[(ref)]]\n"))
-  ;; 3. Normalize plain links.
+  ;; Normalize plain links.
   (should (equal (org-test-parse-and-interpret "http://orgmode.org")
 		 "[[http://orgmode.org]]\n"))
-  ;; 4. Normalize angular links.
+  ;; Normalize angular links.
   (should (equal (org-test-parse-and-interpret "<http://orgmode.org>")
 		 "[[http://orgmode.org]]\n")))
 
@@ -3263,10 +3273,8 @@ Text
   (should
    (eq 'item
        (org-test-with-temp-text "- Para1\n\n- Para2"
-	 (progn (forward-line)
-		(org-element-type
-		 (let ((org-list-empty-line-terminates-plain-lists nil))
-		   (org-element-at-point)))))))
+	 (forward-line)
+	 (org-element-type (org-element-at-point)))))
   ;; Special case: at the last blank line in a plain list, return it
   ;; instead of the last item.
   (should

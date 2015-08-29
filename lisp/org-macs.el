@@ -1,6 +1,6 @@
 ;;; org-macs.el --- Top-level definitions for Org-mode
 
-;; Copyright (C) 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2015 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten at orgmode dot org>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -55,7 +55,7 @@
      ,@body))
 
 (defmacro org-called-interactively-p (&optional kind)
-  (declare (debug (&optional ("quote" symbolp)))) ;Why not just `t'?
+  (declare (debug (&optional ("quote" symbolp)))) ;Why not just t?
   (if (featurep 'xemacs)
       `(interactive-p)
     (if (or (> emacs-major-version 23)

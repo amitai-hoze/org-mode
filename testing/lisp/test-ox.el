@@ -1,4 +1,4 @@
-;;; test-ox.el --- Tests for ox.el
+;;; test-ox.el --- Tests for ox.el                   -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2012-2015  Nicolas Goaziou
 
@@ -28,18 +28,14 @@
   "Return a default export back-end.
 This back-end simply returns parsed data as Org syntax."
   (org-export-create-backend
-   :transcoders (let (transcode-table)
-		  (dolist (type (append org-element-all-elements
-					org-element-all-objects)
-				transcode-table)
-		    (push
-		     (cons type
-			   (lambda (obj contents info)
-			     (funcall
-			      (intern (format "org-element-%s-interpreter"
-					      type))
-			      obj contents)))
-		     transcode-table)))))
+   :transcoders
+   (mapcar (lambda (type)
+	     (cons type
+		   (lambda (o c _)
+		     (funcall
+		      (intern (format "org-element-%s-interpreter" type))
+		      o c))))
+	   (append org-element-all-elements org-element-all-objects))))
 
 (defmacro org-test-with-parsed-data (data &rest body)
   "Execute body with parsed data available.
@@ -762,6 +758,29 @@ Paragraph <2012-03-29 Thu>[2012-03-29 Thu]"
 				      (plist-get i :title) i)))
 		(section . (lambda (s c i) c))))
 	     nil nil nil '(:with-sub-superscript nil)))))
+  ;; Handle uninterpreted objects in captions.
+  (should
+   (equal "adummy\n"
+	  (org-test-with-temp-text "#+CAPTION: a_b\nParagraph"
+	    (org-export-as
+	     (org-export-create-backend
+	      :transcoders
+	      '((subscript . (lambda (s c i) "dummy"))
+		(paragraph . (lambda (p c i)
+			       (org-export-data (org-export-get-caption p) i)))
+		(section . (lambda (s c i) c))))
+	     nil nil nil '(:with-sub-superscript t)))))
+  (should
+   (equal "a_b\n"
+	  (org-test-with-temp-text "#+CAPTION: a_b\nParagraph"
+	    (org-export-as
+	     (org-export-create-backend
+	      :transcoders
+	      '((subscript . (lambda (s c i) "dummy"))
+		(paragraph . (lambda (p c i)
+			       (org-export-data (org-export-get-caption p) i)))
+		(section . (lambda (s c i) c))))
+	     nil nil nil '(:with-sub-superscript nil)))))
   ;; Special case: multiples uninterpreted objects in a row.
   (should
    (equal "a_b_c_d\n"
@@ -911,40 +930,40 @@ text
    (equal
     "#+BEGIN_EXAMPLE\nSmall Org file with an include keyword.\n#+END_EXAMPLE\n"
     (org-test-with-temp-text
-     (format "#+INCLUDE: \"%s/examples/include.org\" :lines \"1-2\" EXAMPLE"
-	     org-test-dir)
-     (org-export-expand-include-keyword)
-     (buffer-string))))
+	(format "#+INCLUDE: \"%s/examples/include.org\" :lines \"1-2\" EXAMPLE"
+		org-test-dir)
+      (org-export-expand-include-keyword)
+      (buffer-string))))
   ;; Inclusion within a src-block.
   (should
    (equal
     "#+BEGIN_SRC emacs-lisp\n(+ 2 1)\n#+END_SRC\n"
     (org-test-with-temp-text
-     (format
-      "#+INCLUDE: \"%s/examples/include.org\" :lines \"4-5\" SRC emacs-lisp"
-      org-test-dir)
-     (org-export-expand-include-keyword)
-     (buffer-string))))
+	(format
+	 "#+INCLUDE: \"%s/examples/include.org\" :lines \"4-5\" SRC emacs-lisp"
+	 org-test-dir)
+      (org-export-expand-include-keyword)
+      (buffer-string))))
   ;; Inclusion within an html export-block.
   (should
    (equal
     "#+BEGIN_HTML\n<p>HTML!</p>\n#+END_HTML\n"
     (org-test-with-temp-text
-     (format
-      "#+INCLUDE: \"%s/examples/include.html\" HTML"
-      org-test-dir)
-     (org-export-expand-include-keyword)
-     (buffer-string))))
+	(format
+	 "#+INCLUDE: \"%s/examples/include.html\" HTML"
+	 org-test-dir)
+      (org-export-expand-include-keyword)
+      (buffer-string))))
   ;; Inclusion within an center paragraph
   (should
    (equal
     "#+BEGIN_CENTER\nSuccess!\n#+END_CENTER\n"
     (org-test-with-temp-text
-     (format
-      "#+INCLUDE: \"%s/examples/include2.org\" CENTER"
-      org-test-dir)
-     (org-export-expand-include-keyword)
-     (buffer-string))))
+	(format
+	 "#+INCLUDE: \"%s/examples/include2.org\" CENTER"
+	 org-test-dir)
+      (org-export-expand-include-keyword)
+      (buffer-string))))
   ;; Footnotes labels are local to each included file.
   (should
    (= 6
@@ -1016,15 +1035,15 @@ Footnotes[fn:2], foot[fn:test], digit only[3], and [fn:inline:anonymous footnote
    (equal
     "body\n"
     (org-test-with-temp-text
-     (concat
-      (format "#+INCLUDE: \"%s/examples/include.org::*Heading\" " org-test-dir)
-      ":only-contents t")
+	(concat
+	 (format "#+INCLUDE: \"%s/examples/include.org::*Heading\" " org-test-dir)
+	 ":only-contents t")
       (org-export-expand-include-keyword)
       (buffer-string))))
   ;; Headings can be included via CUSTOM_ID.
   (should
    (org-test-with-temp-text
-	(format "#+INCLUDE: \"%s/examples/include.org::#ah\"" org-test-dir)
+       (format "#+INCLUDE: \"%s/examples/include.org::#ah\"" org-test-dir)
      (org-export-expand-include-keyword)
      (goto-char (point-min))
      (looking-at "* Another heading")))
@@ -1039,7 +1058,7 @@ Footnotes[fn:2], foot[fn:test], digit only[3], and [fn:inline:anonymous footnote
   ;; Including non-existing elements should result in an error.
   (should-error
    (org-test-with-temp-text
-	(format "#+INCLUDE: \"%s/examples/include.org::*non-existing heading\"" org-test-dir)
+       (format "#+INCLUDE: \"%s/examples/include.org::*non-existing heading\"" org-test-dir)
      (org-export-expand-include-keyword)))
   ;; Lines work relatively to an included element.
   (should
@@ -1541,18 +1560,20 @@ Footnotes[fn:2], foot[fn:test], digit only[3], and [fn:inline:anonymous footnote
 	  (let ((test-back-end
 		 (org-export-create-backend
 		  :transcoders
-		  '((headline . (lambda (headline contents info)
-				  (org-export-data
-				   (org-element-property :title headline)
-				   info)))
-		    (plain-text . (lambda (text info) "Success"))))))
+		  (list (cons 'headline
+			      (lambda (headline contents info)
+				(org-export-data
+				 (org-element-property :title headline)
+				 info)))
+			(cons 'plain-text (lambda (text info) "Success"))))))
 	    (org-export-string-as
 	     "* Test"
 	     (org-export-create-backend
 	      :transcoders
-	      '((headline . (lambda (headline contents info)
-			      (org-export-with-backend
-			       test-back-end headline contents info))))))))))
+	      (list (cons 'headline
+			  (lambda (headline contents info)
+			    (org-export-with-backend
+			     test-back-end headline contents info))))))))))
 
 (ert-deftest test-org-export/data-with-backend ()
   "Test `org-export-data-with-backend' specifications."
@@ -1618,7 +1639,7 @@ Footnotes[fn:2], foot[fn:test], digit only[3], and [fn:inline:anonymous footnote
 	  :transcoders
 	  `(,(cons 'footnote-reference
 		   (lambda (f c i)
-		     (push (org-export-footnote-first-reference-p f info)
+		     (push (org-export-footnote-first-reference-p f i)
 			   result)
 		     ""))
 	    (section . (lambda (s c i) c))
@@ -1664,7 +1685,7 @@ Footnotes[fn:2], foot[fn:test], digit only[3], and [fn:inline:anonymous footnote
 	  `(,(cons 'footnote-reference
 		   (lambda (f c i)
 		     (when (org-element-lineage f '(drawer))
-		       (push (org-export-footnote-first-reference-p f info nil)
+		       (push (org-export-footnote-first-reference-p f i nil)
 			     result))
 		     ""))
 	    (drawer . (lambda (d c i) c))
@@ -1685,7 +1706,7 @@ Footnotes[fn:2], foot[fn:test], digit only[3], and [fn:inline:anonymous footnote
 	  `(,(cons 'footnote-reference
 		   (lambda (f c i)
 		     (when (org-element-lineage f '(drawer))
-		       (push (org-export-footnote-first-reference-p f info nil t)
+		       (push (org-export-footnote-first-reference-p f i nil t)
 			     result))
 		     ""))
 	    (drawer . (lambda (d c i) c))

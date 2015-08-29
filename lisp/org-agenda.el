@@ -3857,35 +3857,36 @@ dimming them."
   (interactive "P")
   (when (org-called-interactively-p 'interactive)
     (message "Dim or hide blocked tasks..."))
-  (mapc (lambda (o) (if (eq (overlay-get o 'org-type) 'org-blocked-todo)
-			(delete-overlay o)))
-	(overlays-in (point-min) (point-max)))
+  (dolist (o (overlays-in (point-min) (point-max)))
+    (when (eq (overlay-get o 'org-type) 'org-blocked-todo)
+      (delete-overlay o)))
   (save-excursion
     (let ((inhibit-read-only t)
 	  (org-depend-tag-blocked nil)
-	  (invis (or (not (null invisible))
-		     (eq org-agenda-dim-blocked-tasks 'invisible)))
-	  org-blocked-by-checkboxes
-	  invis1 b e p ov h l)
+	  org-blocked-by-checkboxes)
       (goto-char (point-min))
-      (while (let ((pos (next-single-property-change (point) 'todo-state)))
-	       (and pos (goto-char (1+ pos))))
-	(setq org-blocked-by-checkboxes nil invis1 invis)
+      (while (let ((pos (text-property-not-all
+			 (point) (point-max) 'todo-state nil)))
+	       (when pos (goto-char pos)))
+	(setq org-blocked-by-checkboxes nil)
 	(let ((marker (org-get-at-bol 'org-hd-marker)))
-	  (when (and marker
+	  (when (and (markerp marker)
 		     (with-current-buffer (marker-buffer marker)
 		       (save-excursion (goto-char marker)
 				       (org-entry-blocked-p))))
-	    (if org-blocked-by-checkboxes (setq invis1 nil))
-	    (setq b (if invis1
-			(max (point-min) (1- (point-at-bol)))
-		      (point-at-bol))
-		  e (point-at-eol)
-		  ov (make-overlay b e))
-	    (if invis1
-		(overlay-put ov 'invisible t)
-	      (overlay-put ov 'face 'org-agenda-dimmed-todo-face))
-	    (overlay-put ov 'org-type 'org-blocked-todo))))))
+	    ;; Entries blocked by checkboxes cannot be made invisible.
+	    ;; See `org-agenda-dim-blocked-tasks' for details.
+	    (let* ((really-invisible
+		    (and (not org-blocked-by-checkboxes)
+			 (or invisible (eq org-agenda-dim-blocked-tasks
+					   'invisible))))
+		   (ov (make-overlay (if really-invisible (line-end-position 0)
+				       (line-beginning-position))
+				     (line-end-position))))
+	      (if really-invisible (overlay-put ov 'invisible t)
+		(overlay-put ov 'face 'org-agenda-dimmed-todo-face))
+	      (overlay-put ov 'org-type 'org-blocked-todo))))
+	(forward-line))))
   (when (org-called-interactively-p 'interactive)
     (message "Dim or hide blocked tasks...done")))
 
@@ -5748,7 +5749,7 @@ This function is invoked if `org-agenda-todo-ignore-deadlines',
    (let ((calendar-date-style 'european)	(european-calendar-style t))
      (diary-date day month year mark))))
 
-;; Define the` org-class' function
+;; Define the `org-class' function
 (defun org-class (y1 m1 d1 y2 m2 d2 dayname &rest skip-weeks)
   "Entry applies if date is between dates on DAYNAME, but skips SKIP-WEEKS.
 DAYNAME is a number between 0 (Sunday) and 6 (Saturday).
@@ -6653,7 +6654,7 @@ The modified list may contain inherited tags, and tags matched by
 
 LIST is the list of agenda items formatted by `org-agenda-list'.
 NDAYS is the span of the current agenda view.
-TODAYP is `t' when the current agenda view is on today."
+TODAYP is t when the current agenda view is on today."
   (catch 'exit
     (cond ((not org-agenda-use-time-grid) (throw 'exit list))
 	  ((and todayp (member 'today (car org-agenda-time-grid))))
@@ -7168,7 +7169,9 @@ in the file.  Otherwise, restriction will be to the current subtree."
 
 (defun org-agenda-maybe-redo ()
   "If there is any window showing the agenda view, update it."
-  (let ((w (get-buffer-window org-agenda-buffer-name t))
+  (let ((w (get-buffer-window (or org-agenda-this-buffer-name
+				  org-agenda-buffer-name)
+			      t))
 	(w0 (selected-window)))
     (when w
       (select-window w)
@@ -8388,13 +8391,13 @@ When called with a prefix argument, include all archive files as well."
       (org-show-context 'agenda)
       (save-excursion
 	(and (outline-next-heading)
-	     (org-flag-heading nil))))	; show the next heading
-    (when (outline-invisible-p)
-      (show-entry))			; display invisible text
-    (recenter (/ (window-height) 2))
-    (org-back-to-heading t)
-    (if (re-search-forward org-complex-heading-regexp nil t)
-	(goto-char (match-beginning 4)))
+	     (org-flag-heading nil)))	; show the next heading
+      (when (outline-invisible-p)
+	(show-entry))			; display invisible text
+      (recenter (/ (window-height) 2))
+      (org-back-to-heading t)
+      (if (re-search-forward org-complex-heading-regexp nil t)
+	  (goto-char (match-beginning 4))))
     (run-hooks 'org-agenda-after-show-hook)
     (and highlight (org-highlight (point-at-bol) (point-at-eol)))))
 
@@ -8593,7 +8596,9 @@ It also looks at the text of the entry itself."
 			   (symbol-value var))))))
 
 (defun org-agenda-switch-to (&optional delete-other-windows)
-  "Go to the Org-mode file which contains the item at point."
+  "Go to the Org mode file which contains the item at point.
+When optional argument DELETE-OTHER-WINDOWS is non-nil, the
+displayed Org file fills the frame."
   (interactive)
   (if (and org-return-follows-link
 	   (not (org-get-at-bol 'org-marker))
@@ -8605,17 +8610,11 @@ It also looks at the text of the entry itself."
 	   (pos (marker-position marker)))
       (unless buffer (user-error "Trying to switch to non-existent buffer"))
       (org-pop-to-buffer-same-window buffer)
-      (and delete-other-windows (delete-other-windows))
+      (when delete-other-windows (delete-other-windows))
       (widen)
       (goto-char pos)
-      (org-back-to-heading t)
       (when (derived-mode-p 'org-mode)
 	(org-show-context 'agenda)
-	(save-excursion
-	  (and (outline-next-heading)
-	       (org-flag-heading nil))) ; show the next heading
-	(when (outline-invisible-p)
-	  (show-entry))                 ; display invisible text
 	(run-hooks 'org-agenda-after-show-hook)))))
 
 (defun org-agenda-goto-mouse (ev)
@@ -8690,7 +8689,7 @@ if it was hidden in the outline."
       (message "Remote: show with default settings"))
      ((= more 2)
       (show-entry)
-      (show-children)
+      (org-show-children)
       (save-excursion
 	(org-back-to-heading)
 	(run-hook-with-args 'org-cycle-hook 'children))
@@ -9418,11 +9417,13 @@ buffer, display it in another window."
   "Where in `org-agenda-diary-file' should new entries be added?
 Valid values:
 
-date-tree    in the date tree, as child of the date
-top-level    as top-level entries at the end of the file."
+date-tree         in the date tree, as first child of the date
+date-tree-last    in the date tree, as last child of the date
+top-level         as top-level entries at the end of the file."
   :group 'org-agenda
   :type '(choice
-	  (const :tag "in a date tree" date-tree)
+	  (const :tag "first in a date tree" date-tree)
+	  (const :tag "last in a date tree" date-tree-last)
 	  (const :tag "as top level at end of file" top-level)))
 
 (defcustom org-agenda-insert-diary-extract-time nil
@@ -9526,14 +9527,20 @@ a timestamp can be added there."
   (when org-adapt-indentation (org-indent-to-column 2)))
 
 (defun org-agenda-insert-diary-make-new-entry (text)
-  "Make a new entry with TEXT as the first child of the current subtree.
+  "Make a new entry with TEXT as a child of the current subtree.
 Position the point in the heading's first body line so that
 a timestamp can be added there."
-  (outline-next-heading)
-  (org-back-over-empty-lines)
-  (unless (looking-at "[ \t]*$") (save-excursion (insert "\n")))
-  (org-insert-heading nil t)
-  (org-do-demote)
+  (cond
+   ((eq org-agenda-insert-diary-strategy 'date-tree-last)
+    (end-of-line)
+    (org-insert-heading '(4) t)
+    (org-do-demote))
+   (t
+    (outline-next-heading)
+    (org-back-over-empty-lines)
+    (unless (looking-at "[ \t]*$") (save-excursion (insert "\n")))
+    (org-insert-heading nil t)
+    (org-do-demote)))
   (let ((col (current-column)))
     (insert text)
     (org-end-of-meta-data)

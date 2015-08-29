@@ -1,6 +1,6 @@
 ;;; ox-icalendar.el --- iCalendar Back-End for Org Export Engine
 
-;; Copyright (C) 2004-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2015 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten at orgmode dot org>
 ;;      Nicolas Goaziou <n dot goaziou at gmail dot com>
@@ -679,7 +679,7 @@ Return VTODO component as a string."
 			(org-element-property :scheduled entry))
 		   ;; If we can't use a scheduled time for some
 		   ;; reason, start task now.
-		   (let ((now (decode-time (current-time))))
+		   (let ((now (decode-time)))
 		     (list 'timestamp
 			   (list :type 'active
 				 :minute-start (nth 1 now)

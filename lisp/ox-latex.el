@@ -204,6 +204,94 @@
     ("uk" . "ukrainian"))
   "Alist between language code and corresponding Babel option.")
 
+(defconst org-latex-polyglossia-language-alist
+  '(("am" "amharic")
+    ("ast" "asturian")
+    ("ar" "arabic")
+    ("bo" "tibetan")
+    ("bn" "bengali")
+    ("bg" "bulgarian")
+    ("br" "breton")
+    ("bt-br" "brazilian")
+    ("ca" "catalan")
+    ("cop" "coptic")
+    ("cs" "czech")
+    ("cy" "welsh")
+    ("da" "danish")
+    ("de" "german" "german")
+    ("de-at" "german" "austrian")
+    ("de-de" "german" "german")
+    ("dv" "divehi")
+    ("el" "greek")
+    ("en" "english" "usmax")
+    ("en-au" "english" "australian")
+    ("en-gb" "english" "uk")
+    ("en-nz" "english" "newzealand")
+    ("en-us" "english" "usmax")
+    ("eo" "esperanto")
+    ("es" "spanish")
+    ("et" "estonian")
+    ("eu" "basque")
+    ("fa" "farsi")
+    ("fi" "finnish")
+    ("fr" "french")
+    ("fu" "friulan")
+    ("ga" "irish")
+    ("gd" "scottish")
+    ("gl" "galician")
+    ("he" "hebrew")
+    ("hi" "hindi")
+    ("hr" "croatian")
+    ("hu" "magyar")
+    ("hy" "armenian")
+    ("id" "bahasai")
+    ("ia" "interlingua")
+    ("is" "icelandic")
+    ("it" "italian")
+    ("kn" "kannada")
+    ("la" "latin" "modern")
+    ("la-modern" "latin" "modern")
+    ("la-classic" "latin" "classic")
+    ("la-medieval" "latin" "medieval")
+    ("lo" "lao")
+    ("lt" "lithuanian")
+    ("lv" "latvian")
+    ("mr" "maranthi")
+    ("ml" "malayalam")
+    ("nl" "dutch")
+    ("nb" "norsk")
+    ("nn" "nynorsk")
+    ("nko" "nko")
+    ("no" "norsk")
+    ("oc" "occitan")
+    ("pl" "polish")
+    ("pms" "piedmontese")
+    ("pt" "portuges")
+    ("rm" "romansh")
+    ("ro" "romanian")
+    ("ru" "russian")
+    ("sa" "sanskrit")
+    ("hsb" "usorbian")
+    ("dsb" "lsorbian")
+    ("sk" "slovak")
+    ("sl" "slovenian")
+    ("se" "samin")
+    ("sq" "albanian")
+    ("sr" "serbian")
+    ("sv" "swedish")
+    ("syr" "syriac")
+    ("ta" "tamil")
+    ("te" "telugu")
+    ("th" "thai")
+    ("tk" "turkmen")
+    ("tr" "turkish")
+    ("uk" "ukrainian")
+    ("ur" "urdu")
+    ("vi" "vietnamese"))
+  "Alist between language code and corresponding Polyglossia option")
+
+
+
 (defconst org-latex-table-matrix-macros '(("bordermatrix" . "\\cr")
 					  ("qbordermatrix" . "\\cr")
 					  ("kbordermatrix" . "\\\\"))
@@ -390,11 +478,15 @@ AUTO will automatically be replaced with a coding system derived
 from `buffer-file-coding-system'.  See also the variable
 `org-latex-inputenc-alist' for a way to influence this mechanism.
 
-Likewise, if your header contains \"\\usepackage[AUTO]{babel}\",
-AUTO will be replaced with the language related to the language
-code specified by `org-export-default-language', which see.  Note
-that constructions such as \"\\usepackage[french,AUTO,english]{babel}\"
-are permitted.
+Likewise, if your header contains \"\\usepackage[AUTO]{babel}\"
+or \"\\usepackage[AUTO]{polyglossia}\", AUTO will be replaced
+with the language related to the language code specified by
+`org-export-default-language'.  Note that constructions such as
+\"\\usepackage[french,AUTO,english]{babel}\" are permitted.  For
+Polyglossia the language will be set via the macros
+\"\\setmainlanguage\" and \"\\setotherlanguage\".  See also
+`org-latex-guess-babel-language' and
+`org-latex-guess-polyglossia-language'.
 
 The sectioning structure
 ------------------------
@@ -518,12 +610,18 @@ This format string may contain these elements:
 If you need to use a \"%\" character, you need to escape it
 like that: \"%%\".
 
+As a special case, a nil value prevents template from being
+inserted.
+
 Setting :latex-hyperref-template in publishing projects will take
 precedence over this variable."
   :group 'org-export-latex
   :version "25.1"
   :package-version '(Org . "8.3")
-  :type '(string :tag "Format string"))
+  :type '(choice (const :tag "No template" nil)
+		 (string :tag "Format string")))
+(define-obsolete-variable-alias
+  'org-latex-with-hyperref 'org-latex-hyperref-template "25.1")
 
 ;;;; Headline
 
@@ -1195,6 +1293,59 @@ Return the new header."
 		    ", ")
 	 t nil header 1)))))
 
+(defun org-latex-guess-polyglossia-language (header info)
+  "Set the Polyglossia language according to the LANGUAGE keyword.
+
+HEADER is the LaTeX header string.  INFO is the plist used as
+a communication channel.
+
+Insertion of guessed language only happens when the Polyglossia
+package has been explicitly loaded.
+
+The argument to Polyglossia may be \"AUTO\" which is then
+replaced with the language of the document or
+`org-export-default-language'.  Note, the language is really set
+using \setdefaultlanguage and not as an option to the package.
+
+Return the new header."
+  (let ((language (plist-get info :language)))
+    ;; If no language is set or Polyglossia is not loaded, return
+    ;; HEADER as-is.
+    (if (or (not (stringp language))
+	    (not (string-match
+		  "\\\\usepackage\\(?:\\[\\([^]]+?\\)\\]\\){polyglossia}\n"
+		  header)))
+	header
+      (let* ((options (org-string-nw-p (match-string 1 header)))
+	     (languages (and options
+			     ;; Reverse as the last loaded language is
+			     ;; the main language.
+			     (nreverse
+			      (delete-dups
+			       (save-match-data
+				 (org-split-string
+				  (replace-regexp-in-string
+				   "AUTO" language options t)
+				  ",[ \t]*"))))))
+	     (main-language-set
+	      (string-match-p "\\\\setmainlanguage{.*?}" header)))
+	(replace-match
+	 (concat "\\usepackage{polyglossia}\n"
+		 (mapconcat
+		  (lambda (l)
+		    (let ((l (or (assoc l org-latex-polyglossia-language-alist)
+				 l)))
+		      (format (if main-language-set "\\setotherlanguage%s{%s}\n"
+				(setq main-language-set t)
+				"\\setmainlanguage%s{%s}\n")
+			      (if (and (consp l) (= (length l) 3))
+				  (format "[variant=%s]" (nth 2 l))
+				"")
+			      (nth 1 l))))
+		  languages
+		  ""))
+	 t t header 0)))))
+
 (defun org-latex--find-verb-separator (s)
   "Return a character not used in string S.
 This is used to choose a separator for constructs like \\verb."
@@ -1324,6 +1475,34 @@ INFO is a plist used as a communication channel."
       (?L . ,(capitalize language))
       (?D . ,(org-export-get-date info)))))
 
+(defun org-latex--make-header (info)
+  "Return a formatted LaTeX header.
+INFO is a plist used as a communication channel."
+  (let* ((class (plist-get info :latex-class))
+	    (class-options (plist-get info :latex-class-options))
+	    (header (nth 1 (assoc class (plist-get info :latex-classes))))
+	    (document-class-string
+	     (and (stringp header)
+		  (if (not class-options) header
+		    (replace-regexp-in-string
+		     "^[ \t]*\\\\documentclass\\(\\(\\[[^]]*\\]\\)?\\)"
+		     class-options header t nil 1)))))
+       (if (not document-class-string)
+	   (user-error "Unknown LaTeX class `%s'" class)
+	 (org-latex-guess-polyglossia-language
+	  (org-latex-guess-babel-language
+	   (org-latex-guess-inputenc
+	    (org-element-normalize-string
+	     (org-splice-latex-header
+	      document-class-string
+	      org-latex-default-packages-alist
+	      org-latex-packages-alist nil
+	      (concat (org-element-normalize-string
+		       (plist-get info :latex-header))
+		      (plist-get info :latex-header-extra)))))
+	   info)
+	  info))))
+
 
 ;;; Template
 
@@ -1338,28 +1517,7 @@ holding export options."
      (and (plist-get info :time-stamp-file)
 	  (format-time-string "%% Created %Y-%m-%d %a %H:%M\n"))
      ;; Document class and packages.
-     (let* ((class (plist-get info :latex-class))
-	    (class-options (plist-get info :latex-class-options))
-	    (header (nth 1 (assoc class (plist-get info :latex-classes))))
-	    (document-class-string
-	     (and (stringp header)
-		  (if (not class-options) header
-		    (replace-regexp-in-string
-		     "^[ \t]*\\\\documentclass\\(\\(\\[[^]]*\\]\\)?\\)"
-		     class-options header t nil 1)))))
-       (if (not document-class-string)
-	   (user-error "Unknown LaTeX class `%s'" class)
-	 (org-latex-guess-babel-language
-	  (org-latex-guess-inputenc
-	   (org-element-normalize-string
-	    (org-splice-latex-header
-	     document-class-string
-	     org-latex-default-packages-alist
-	     org-latex-packages-alist nil
-	     (concat (org-element-normalize-string
-		      (plist-get info :latex-header))
-		     (plist-get info :latex-header-extra)))))
-	  info)))
+     (org-latex--make-header info)
      ;; Possibly limit depth for headline numbering.
      (let ((sec-num (plist-get info :section-numbers)))
        (when (integerp sec-num)
@@ -3281,7 +3439,7 @@ Return PDF file name or an error if it couldn't be produced."
 			      default-directory))
 	 (time (current-time))
 	 warnings)
-    (unless snippet (message (format "Processing LaTeX file %s..." texfile)))
+    (unless snippet (message "Processing LaTeX file %s..." texfile))
     (save-window-excursion
       (cond
        ;; A function is provided: Apply it.

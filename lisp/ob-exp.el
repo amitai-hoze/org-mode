@@ -1,6 +1,6 @@
 ;;; ob-exp.el --- Exportation of org-babel source blocks
 
-;; Copyright (C) 2009-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
 ;; Authors: Eric Schulte
 ;;	Dan Davison
@@ -41,7 +41,7 @@
 (declare-function org-in-commented-heading-p "org" (&optional no-inheritance))
 (declare-function org-in-block-p "org" (names))
 (declare-function org-in-verbatim-emphasis "org" ())
-(declare-function org-link-search "org" (s &optional type avoid-pos stealth))
+(declare-function org-link-search "org" (s &optional avoid-pos stealth))
 (declare-function org-fill-template "org" (template alist))
 (declare-function org-split-string "org" (string &optional separators))
 (declare-function org-element-at-point "org-element" ())

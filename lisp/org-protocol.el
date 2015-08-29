@@ -1,6 +1,6 @@
 ;;; org-protocol.el --- Intercept calls from emacsclient to trigger custom actions.
 ;;
-;; Copyright (C) 2008-2014 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2015 Free Software Foundation, Inc.
 ;;
 ;; Authors: Bastien Guerry <bzg@gnu.org>
 ;;       Daniel M German <dmg AT uvic DOT org>
@@ -561,7 +561,7 @@ as filename."
         (let ((fname  (expand-file-name (car var))))
           (setq fname (org-protocol-check-filename-for-protocol
 		       fname (member var flist)  client))
-          (if (eq fname t) ;; greedy? We need the `t' return value.
+          (if (eq fname t) ;; greedy? We need the t return value.
               (progn
                 (ad-set-arg 0 nil)
                 (throw 'greedy t))

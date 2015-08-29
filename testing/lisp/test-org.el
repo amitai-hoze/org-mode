@@ -352,7 +352,7 @@
 	    (buffer-string))))
   (should
    (equal "#+name: table\n| a |\n"
-	  (org-test-with-temp-text "#+name: table\n| a |"
+	  (org-test-with-temp-text "#+name: table\n| a |\n"
 	    (org-fill-paragraph)
 	    (buffer-string))))
   ;; At a paragraph, preserve line breaks.
@@ -886,12 +886,19 @@
   ;; is non-nil.
   (should
    (org-test-with-temp-text "Link [[target<point>]] <<target>>"
-     (let ((org-return-follows-link t)) (org-return))
+     (let ((org-return-follows-link t)
+	   (org-link-search-must-match-exact-headline nil)) (org-return))
      (org-looking-at-p "<<target>>")))
   (should-not
    (org-test-with-temp-text "Link [[target<point>]] <<target>>"
      (let ((org-return-follows-link nil)) (org-return))
      (org-looking-at-p "<<target>>")))
+  ;; Link in heading should also be opened when
+  ;; `org-return-follows-link` is non-nil.
+  (should
+   (org-test-with-temp-text "* [[b][a<point>]]\n* b"
+     (let ((org-return-follows-link t)) (org-return))
+     (org-looking-at-p "* b")))
   ;; However, do not open link when point is in a table.
   (should
    (org-test-with-temp-text "| [[target<point>]] |\n| between |\n| <<target>> |"
@@ -938,6 +945,12 @@
   (should
    (equal "\n* h"
 	  (org-test-with-temp-text "<point>* h"
+	    (org-return)
+	    (buffer-string))))
+  ;; Refuse to leave invalid headline in buffer.
+  (should
+   (equal "* h\n"
+	  (org-test-with-temp-text "*<point> h"
 	    (org-return)
 	    (buffer-string)))))
 
@@ -1241,6 +1254,49 @@
      (goto-char (point-max))
      (org-in-commented-heading-p t))))
 
+(ert-deftest test-org/entry-blocked-p ()
+  ;; Check other dependencies.
+  (should
+   (org-test-with-temp-text "* TODO Blocked\n** DONE one\n** TODO two"
+     (let ((org-enforce-todo-dependencies t)
+	   (org-blocker-hook
+	    '(org-block-todo-from-children-or-siblings-or-parent)))
+       (org-entry-blocked-p))))
+  (should-not
+   (org-test-with-temp-text "* TODO Blocked\n** DONE one\n** DONE two"
+     (let ((org-enforce-todo-dependencies t)
+	   (org-blocker-hook
+	    '(org-block-todo-from-children-or-siblings-or-parent)))
+       (org-entry-blocked-p))))
+  ;; Entry without a TODO keyword or with a DONE keyword cannot be
+  ;; blocked.
+  (should-not
+   (org-test-with-temp-text "* Blocked\n** TODO one"
+     (let ((org-enforce-todo-dependencies t)
+	   (org-blocker-hook
+	    '(org-block-todo-from-children-or-siblings-or-parent)))
+       (org-entry-blocked-p))))
+  (should-not
+   (org-test-with-temp-text "* DONE Blocked\n** TODO one"
+     (let ((org-enforce-todo-dependencies t)
+	   (org-blocker-hook
+	    '(org-block-todo-from-children-or-siblings-or-parent)))
+       (org-entry-blocked-p))))
+  ;; Follow :ORDERED: specifications.
+  (should
+   (org-test-with-temp-text
+       "* H\n:PROPERTIES:\n:ORDERED: t\n:END:\n** TODO one\n** <point>TODO two"
+     (let ((org-enforce-todo-dependencies t)
+	   (org-blocker-hook
+	    '(org-block-todo-from-children-or-siblings-or-parent)))
+       (org-entry-blocked-p))))
+  (should-not
+   (org-test-with-temp-text
+       "* H\n:PROPERTIES:\n:ORDERED: t\n:END:\n** <point>TODO one\n** DONE two"
+     (let ((org-enforce-todo-dependencies t)
+	   (org-blocker-hook
+	    '(org-block-todo-from-children-or-siblings-or-parent)))
+       (org-entry-blocked-p)))))
 
 
 ;;; Keywords
@@ -1422,10 +1478,18 @@
 #+BEGIN_SRC emacs-lisp
 \(+ 1 1)                  (ref:sc)
 #+END_SRC
-\[[(sc)]]"
-     (goto-char (point-max))
+\[[(sc)]]<point>"
      (org-open-at-point)
-     (looking-at "(ref:sc)"))))
+     (looking-at "(ref:sc)")))
+  ;; Find coderef even with alternate label format.
+  (should
+   (org-test-with-temp-text "
+#+BEGIN_SRC emacs-lisp -l \"{ref:%s}\"
+\(+ 1 1)                  {ref:sc}
+#+END_SRC
+\[[(sc)]]<point>"
+     (org-open-at-point)
+     (looking-at "{ref:sc}"))))
 
 ;;;; Custom ID
 
@@ -1433,16 +1497,14 @@
   "Test custom ID links specifications."
   (should
    (org-test-with-temp-text
-       "* H1\n:PROPERTIES:\n:CUSTOM_ID: custom\n:END:\n* H2\n[[#custom]]"
-     (goto-char (point-max))
+       "* H1\n:PROPERTIES:\n:CUSTOM_ID: custom\n:END:\n* H2\n[[#custom]]<point>"
      (org-open-at-point)
      (org-looking-at-p "\\* H1")))
-  ;; Ignore false positives.
-  (should-not
+  ;; Throw an error on false positives.
+  (should-error
    (org-test-with-temp-text
        "* H1\n:DRAWER:\n:CUSTOM_ID: custom\n:END:\n* H2\n[[#custom]]<point>"
-     (goto-char (point-max))
-     (let (org-link-search-must-match-exact-headline) (org-open-at-point))
+     (org-open-at-point)
      (org-looking-at-p "\\* H1"))))
 
 ;;;; Fuzzy Links
@@ -1454,27 +1516,24 @@
   "Test fuzzy links specifications."
   ;; Fuzzy link goes in priority to a matching target.
   (should
-   (org-test-with-temp-text "#+NAME: Test\n|a|b|\n<<Test>>\n* Test\n[[Test]]"
-     (goto-line 5)
-     (org-open-at-point)
+   (org-test-with-temp-text
+       "#+NAME: Test\n|a|b|\n<<Test>>\n* Test\n<point>[[Test]]"
+     (let ((org-link-search-must-match-exact-headline nil)) (org-open-at-point))
      (looking-at "<<Test>>")))
   ;; Then fuzzy link points to an element with a given name.
   (should
-   (org-test-with-temp-text "Test\n#+NAME: Test\n|a|b|\n* Test\n[[Test]]"
-     (goto-line 5)
-     (org-open-at-point)
+   (org-test-with-temp-text "Test\n#+NAME: Test\n|a|b|\n* Test\n<point>[[Test]]"
+     (let ((org-link-search-must-match-exact-headline nil)) (org-open-at-point))
      (looking-at "#\\+NAME: Test")))
   ;; A target still lead to a matching headline otherwise.
   (should
-   (org-test-with-temp-text "* Head1\n* Head2\n*Head3\n[[Head2]]"
-     (goto-line 4)
-     (org-open-at-point)
+   (org-test-with-temp-text "* Head1\n* Head2\n*Head3\n<point>[[Head2]]"
+     (let ((org-link-search-must-match-exact-headline nil)) (org-open-at-point))
      (looking-at "\\* Head2")))
   ;; With a leading star in link, enforce heading match.
   (should
-   (org-test-with-temp-text "* Test\n<<Test>>\n[[*Test]]"
-     (goto-line 3)
-     (org-open-at-point)
+   (org-test-with-temp-text "* Test\n<<Test>>\n<point>[[*Test]]"
+     (let ((org-link-search-must-match-exact-headline nil)) (org-open-at-point))
      (looking-at "\\* Test")))
   ;; With a leading star in link, enforce exact heading match, even
   ;; with `org-link-search-must-match-exact-headline' set to nil.
@@ -1482,7 +1541,16 @@
    (org-test-with-temp-text "* Test 1\nFoo Bar\n<point>[[*Test]]"
      (let ((org-link-search-must-match-exact-headline nil))
        (org-open-at-point))))
-  ;; Heading match should not care about spaces, cookies, todo
+  ;; Handle non-nil `org-link-search-must-match-exact-headline'.
+  (should
+   (org-test-with-temp-text "* Test\nFoo Bar\n<point>[[Test]]"
+     (let ((org-link-search-must-match-exact-headline t)) (org-open-at-point))
+     (looking-at "\\* Test")))
+  (should
+   (org-test-with-temp-text "* Test\nFoo Bar\n<point>[[*Test]]"
+     (let ((org-link-search-must-match-exact-headline t)) (org-open-at-point))
+     (looking-at "\\* Test")))
+  ;; Heading match should not care about spaces, cookies, TODO
   ;; keywords, priorities, and tags.
   (should
    (let ((first-line
@@ -1646,6 +1714,14 @@ drops support for Emacs 24.1 and 24.2."
      (org-open-at-point)
      (prog1 (with-current-buffer "*info*" (looking-at "\nOrg Mode Manual"))
        (kill-buffer "*info*")))))
+
+(ert-deftest test-org/open-at-point/radio-target ()
+  "Test `org-open-at-point' on radio targets."
+  (should
+   (org-test-with-temp-text "<<<target>>> <point>target"
+     (org-update-radio-target-regexp)
+     (org-open-at-point)
+     (eq (org-element-type (org-element-context)) 'radio-target))))
 
 
 ;;; Node Properties
@@ -1815,7 +1891,15 @@ drops support for Emacs 24.1 and 24.2."
        (org-end-of-line)
        (and (progn (org-beginning-of-line) (looking-at "Headline"))
 	    (progn (org-beginning-of-line) (bolp))
-	    (progn (org-beginning-of-line) (looking-at "Headline")))))))
+	    (progn (org-beginning-of-line) (looking-at "Headline"))))))
+  ;; Special case: Do not error when the buffer contains only a single
+  ;; asterisk.
+  (should
+   (org-test-with-temp-text "*<point>"
+     (let ((org-special-ctrl-a/e t)) (org-beginning-of-line))))
+  (should
+   (org-test-with-temp-text "*<point>"
+     (let ((org-special-ctrl-a/e nil)) (org-beginning-of-line)))))
 
 (ert-deftest test-org/end-of-line ()
   "Test `org-end-of-line' specifications."
@@ -3248,7 +3332,7 @@ Paragraph<point>"
    (equal "* H"
 	  (org-test-with-temp-text "* TODO H"
 	    (cdr (assoc "ITEM" (org-entry-properties))))))
-  ;; Get "TODO" property.
+  ;; Get "TODO" property.  TODO keywords are case sensitive.
   (should
    (equal "TODO"
 	  (org-test-with-temp-text "* TODO H"
@@ -3260,6 +3344,9 @@ Paragraph<point>"
   (should-not
    (org-test-with-temp-text "* H"
      (assoc "TODO" (org-entry-properties nil "TODO"))))
+  (should-not
+   (org-test-with-temp-text "* todo H"
+     (assoc "TODO" (org-entry-properties nil "TODO"))))
   ;; Get "PRIORITY" property.
   (should
    (equal "A"
@@ -3269,9 +3356,10 @@ Paragraph<point>"
    (equal "A"
 	  (org-test-with-temp-text "* [#A] H"
 	    (cdr (assoc "PRIORITY" (org-entry-properties))))))
-  (should-not
-   (org-test-with-temp-text "* H"
-     (assoc "PRIORITY" (org-entry-properties nil "PRIORITY"))))
+  (should
+   (equal (char-to-string org-default-priority)
+	  (org-test-with-temp-text "* H"
+	    (cdr (assoc "PRIORITY" (org-entry-properties nil "PRIORITY"))))))
   ;; Get "FILE" property.
   (should
    (org-test-with-temp-text-in-file "* H\nParagraph"
@@ -3311,22 +3399,17 @@ Paragraph<point>"
   ;; Get "BLOCKED" property.
   (should
    (equal "t"
-	  (org-test-with-temp-text "* Blocked\n** DONE one\n** TODO two"
+	  (org-test-with-temp-text "* TODO Blocked\n** DONE one\n** TODO two"
 	    (let ((org-enforce-todo-dependencies t)
 		  (org-blocker-hook
 		   '(org-block-todo-from-children-or-siblings-or-parent)))
 	      (cdr (assoc "BLOCKED" (org-entry-properties nil "BLOCKED")))))))
   (should
-   (equal "t"
-	  (org-test-with-temp-text "* Blocked\n** DONE one\n** TODO two"
+   (equal ""
+	  (org-test-with-temp-text "* TODO Blocked\n** DONE one\n** DONE two"
 	    (let ((org-enforce-todo-dependencies t)
 		  (org-blocker-hook
 		   '(org-block-todo-from-children-or-siblings-or-parent)))
-	      (cdr (assoc "BLOCKED" (org-entry-properties)))))))
-  (should
-   (equal ""
-	  (org-test-with-temp-text "* Blocked\n** DONE one\n** DONE two"
-	    (let ((org-enforce-todo-dependencies t))
 	      (cdr (assoc "BLOCKED" (org-entry-properties nil "BLOCKED")))))))
   ;; Get "CLOSED", "DEADLINE" and "SCHEDULED" properties.
   (should
@@ -3391,20 +3474,20 @@ Paragraph<point>"
   ;; Get "TIMESTAMP" and "TIMESTAMP_IA" properties.
   (should
    (equal "<2012-03-29 thu.>"
-    (org-test-with-temp-text "* Entry\n<2012-03-29 thu.>"
-      (cdr (assoc "TIMESTAMP" (org-entry-properties))))))
+	  (org-test-with-temp-text "* Entry\n<2012-03-29 thu.>"
+	    (cdr (assoc "TIMESTAMP" (org-entry-properties))))))
   (should
    (equal "[2012-03-29 thu.]"
-    (org-test-with-temp-text "* Entry\n[2012-03-29 thu.]"
-      (cdr (assoc "TIMESTAMP_IA" (org-entry-properties))))))
+	  (org-test-with-temp-text "* Entry\n[2012-03-29 thu.]"
+	    (cdr (assoc "TIMESTAMP_IA" (org-entry-properties))))))
   (should
    (equal "<2012-03-29 thu.>"
-    (org-test-with-temp-text "* Entry\n[2014-03-04 tue.]<2012-03-29 thu.>"
-      (cdr (assoc "TIMESTAMP" (org-entry-properties nil "TIMESTAMP"))))))
+	  (org-test-with-temp-text "* Entry\n[2014-03-04 tue.]<2012-03-29 thu.>"
+	    (cdr (assoc "TIMESTAMP" (org-entry-properties nil "TIMESTAMP"))))))
   (should
    (equal "[2014-03-04 tue.]"
-    (org-test-with-temp-text "* Entry\n<2012-03-29 thu.>[2014-03-04 tue.]"
-      (cdr (assoc "TIMESTAMP_IA" (org-entry-properties nil "TIMESTAMP_IA"))))))
+	  (org-test-with-temp-text "* Entry\n<2012-03-29 thu.>[2014-03-04 tue.]"
+	    (cdr (assoc "TIMESTAMP_IA" (org-entry-properties nil "TIMESTAMP_IA"))))))
   ;; Get standard properties.
   (should
    (equal "1"
