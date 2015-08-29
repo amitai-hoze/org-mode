@@ -75,10 +75,11 @@
 		  (if graphic-file
 		      "" ; Put graphic stuff for haskell-diagrams
 		    ""))
-		;; variables
-		(mapconcat 'org-babel-haskell-var-to-haskell vars "\n")
 		;; body
-		body)
+		body
+		;; variables
+		(mapconcat 'identity (org-babel-variable-assignments:haskell params) "\n")
+		)
 	       "\n")))
 
 (defun org-babel-execute:haskell (body params)
@@ -202,10 +203,10 @@ then create one.  Return the initialized session."
 	      (org-babel-variable-assignments:haskell params)))
       (current-buffer))))
 
-(defun org-babel-variable-assignments:haskell (params)
+(defun org-babel-variable-assignments:haskell (params &optional ghci)
   "Return list of haskell statements assigning the block's variables."
   (mapcar (lambda (pair)
-	    (format "let %s = %s"
+	    (format (if ghci "let %s = %s" "%s = %s")
 		    (car pair)
 		    (org-babel-haskell-var-to-haskell (cdr pair))))
 	  (mapcar #'cdr (org-babel-get-header params :var))))
@@ -217,6 +218,16 @@ specifying a variable of the same value."
   (if (listp var)
       (concat "[" (mapconcat #'org-babel-haskell-var-to-haskell var ", ") "]")
     (format "%S" var)))
+
+(defun org-babel-haskell-assignment-to-haskell (var)
+  "Convert an elisp value VAR into a haskell variable.
+The elisp VAR is converted to a string of haskell source code
+specifying a variable of the same value."
+  (let ((name (first var))
+	(value (car (last var))))
+    (if (listp value)
+	(concat "[" (mapconcat #'org-babel-haskell-var-to-haskell var ", ") "]")
+      (format "%S" var))))
 
 (defvar org-export-copy-to-kill-ring)
 (declare-function org-export-to-file "ox"
