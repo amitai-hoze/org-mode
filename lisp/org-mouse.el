@@ -195,11 +195,10 @@ Changing this variable requires a restart of Emacs to get activated."
     (skip-chars-backward ":A-Za-z")
     (skip-chars-backward "\t ")))
 
-(defvar org-mouse-context-menu-function nil
+(defvar-local org-mouse-context-menu-function nil
   "Function to create the context menu.
 The value of this variable is the function invoked by
 `org-mouse-context-menu' as the context menu.")
-(make-variable-buffer-local 'org-mouse-context-menu-function)
 
 (defun org-mouse-show-context-menu (event prefix)
   "Invoke the context menu.
@@ -377,7 +376,7 @@ nor a function, elements of KEYWORDS are used directly."
 (defvar org-mouse-priority-regexp "\\[#\\([A-Z]\\)\\]"
   "Regular expression matching the priority indicator.
 Differs from `org-priority-regexp' in that it doesn't contain the
-leading '.*?'.")
+leading `.*?'.")
 
 (defun org-mouse-get-priority (&optional default)
   "Return the priority of the current headline.
@@ -497,7 +496,7 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
    `("Main Menu"
      ["Show Overview" org-mouse-show-overview t]
      ["Show Headlines" org-mouse-show-headlines t]
-     ["Show All" show-all t]
+     ["Show All" outline-show-all t]
      ["Remove Highlights" org-remove-occur-highlights
       :visible org-occur-highlights]
      "--"
@@ -538,7 +537,7 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
 		((stringp (nth 2 entry))
 		 (concat (org-mouse-agenda-type (nth 1 entry))
 			 (nth 2 entry)))
-		(t "Agenda Command '%s'"))
+		(t "Agenda Command `%s'"))
 	       30))))
      "--"
      ["Delete Blank Lines" delete-blank-lines
@@ -565,7 +564,7 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
       (save-excursion (org-apply-on-list wrap-fun nil)))))
 
 (defun org-mouse-bolp ()
-  "Return true if there only spaces, tabs, and '*' before point.
+  "Return true if there only spaces, tabs, and `*' before point.
 This means, between the beginning of line and the point."
   (save-excursion
     (skip-chars-backward " \t*") (bolp)))
@@ -586,7 +585,7 @@ This means, between the beginning of line and the point."
     (:end				; insert text here
      (skip-chars-backward " \t")
      (kill-region (point) (point-at-eol))
-     (unless (org-looking-back org-mouse-punctuation)
+     (unless (org-looking-back org-mouse-punctuation (line-beginning-position))
        (insert (concat org-mouse-punctuation " ")))))
   (insert text)
   (beginning-of-line))
@@ -644,7 +643,8 @@ This means, between the beginning of line and the point."
 					'org-mode-restart))))
      ((or (eolp)
 	  (and (looking-at "\\(  \\|\t\\)\\(+:[0-9a-zA-Z_:]+\\)?\\(  \\|\t\\)+$")
-	       (org-looking-back "  \\|\t" (- (point) 2))))
+	       (org-looking-back "  \\|\t" (- (point) 2)
+				 (line-beginning-position))))
       (org-mouse-popup-global-menu))
      ((funcall get-context :checkbox)
       (popup-menu
@@ -707,9 +707,9 @@ This means, between the beginning of line and the point."
      ((org-mouse-looking-at ":\\([A-Za-z0-9_]+\\):" "A-Za-z0-9_" -1) ;tags
       (popup-menu
        `(nil
-	 [,(format "Display '%s'" (match-string 1))
+	 [,(format-message "Display `%s'" (match-string 1))
 	  (org-tags-view nil ,(match-string 1))]
-	 [,(format "Sparse Tree '%s'" (match-string 1))
+	 [,(format-message "Sparse Tree `%s'" (match-string 1))
 	  (org-tags-sparse-tree nil ,(match-string 1))]
 	 "--"
 	 ,@(org-mouse-tag-menu))))

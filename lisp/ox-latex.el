@@ -1,4 +1,4 @@
-;;; ox-latex.el --- LaTeX Back-End for Org Export Engine
+;;; ox-latex.el --- LaTeX Back-End for Org Export Engine -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2011-2015 Free Software Foundation, Inc.
 
@@ -144,6 +144,7 @@
     (:latex-text-markup-alist nil nil org-latex-text-markup-alist)
     (:latex-title-command nil nil org-latex-title-command)
     (:latex-toc-command nil nil org-latex-toc-command)
+    (:latex-compiler "LATEX_COMPILER" nil org-latex-compiler)
     ;; Redefine regular options.
     (:date "DATE" nil "\\today" parse)))
 
@@ -426,9 +427,9 @@ references."
 If #+LATEX_CLASS is set in the buffer, use its value and the
 associated information.  Here is the structure of each cell:
 
-  \(class-name
+  (class-name
     header-string
-    \(numbered-section . unnumbered-section)
+    (numbered-section . unnumbered-section)
     ...)
 
 The header string
@@ -499,11 +500,11 @@ section string and will be replaced by the title of the section.
 Instead of a cons cell (numbered . unnumbered), you can also
 provide a list of 2 or 4 elements,
 
-  \(numbered-open numbered-close)
+  (numbered-open numbered-close)
 
 or
 
-  \(numbered-open numbered-close unnumbered-open unnumbered-close)
+  (numbered-open numbered-close unnumbered-open unnumbered-close)
 
 providing opening and closing strings for a LaTeX environment
 that should represent the document section.  The opening clause
@@ -829,8 +830,7 @@ returned as-is."
 
 ;;;; Drawers
 
-(defcustom org-latex-format-drawer-function
-  (lambda (name contents) contents)
+(defcustom org-latex-format-drawer-function (lambda (_ contents) contents)
   "Function called to format a drawer in LaTeX code.
 
 The function must accept two parameters:
@@ -879,21 +879,21 @@ listings package, and if you want to have color, the color
 package.  Just add these to `org-latex-packages-alist', for
 example using customize, or with something like:
 
-  \(require 'ox-latex)
-  \(add-to-list 'org-latex-packages-alist '(\"\" \"listings\"))
-  \(add-to-list 'org-latex-packages-alist '(\"\" \"color\"))
+  (require \\='ox-latex)
+  (add-to-list \\='org-latex-packages-alist \\='(\"\" \"listings\"))
+  (add-to-list \\='org-latex-packages-alist \\='(\"\" \"color\"))
 
 Alternatively,
 
-  \(setq org-latex-listings 'minted)
+  (setq org-latex-listings \\='minted)
 
 causes source code to be exported using the minted package as
 opposed to listings.  If you want to use minted, you need to add
 the minted package to `org-latex-packages-alist', for example
 using customize, or with
 
-  \(require 'ox-latex)
-  \(add-to-list 'org-latex-packages-alist '(\"newfloat\" \"minted\"))
+  (require \\='ox-latex)
+  (add-to-list \\='org-latex-packages-alist \\='(\"newfloat\" \"minted\"))
 
 In addition, it is necessary to install pygments
 \(http://pygments.org), and to configure the variable
@@ -923,7 +923,8 @@ into previewing problems, please consult
     (gnuplot "Gnuplot")
     (ocaml "Caml") (caml "Caml")
     (sql "SQL") (sqlite "sql")
-    (makefile "make"))
+    (makefile "make")
+    (R "r"))
   "Alist mapping languages to their listing language counterpart.
 The key is a symbol, the major mode symbol without the \"-mode\".
 The value is the string that should be inserted as the language
@@ -946,9 +947,9 @@ These options are supplied as a comma-separated list to the
 a list containing two strings: the name of the option, and the
 value.  For example,
 
-  \(setq org-latex-listings-options
-    '((\"basicstyle\" \"\\\\small\")
-      \(\"keywordstyle\" \"\\\\color{black}\\\\bfseries\\\\underbar\")))
+  (setq org-latex-listings-options
+    \\='((\"basicstyle\" \"\\\\small\")
+      (\"keywordstyle\" \"\\\\color{black}\\\\bfseries\\\\underbar\")))
 
 will typeset the code in a small size font with underlined, bold
 black keywords.
@@ -999,8 +1000,8 @@ These options are supplied within square brackets in
 be a list containing two strings: the name of the option, and the
 value.  For example,
 
-  \(setq org-latex-minted-options
-    '\((\"bgcolor\" \"bg\") \(\"frame\" \"lines\")))
+  (setq org-latex-minted-options
+    '((\"bgcolor\" \"bg\") (\"frame\" \"lines\")))
 
 will result in src blocks being exported with
 
@@ -1026,8 +1027,8 @@ block-specific options, you may use the following syntax:
 It is used during export of src blocks by the listings and minted
 latex packages.  For example,
 
-  \(setq org-latex-custom-lang-environments
-     '\(\(python \"pythoncode\"\)\)\)
+  (setq org-latex-custom-lang-environments
+     '((python \"pythoncode\")))
 
 would have the effect that if org encounters begin_src python
 during latex export it will output
@@ -1039,15 +1040,62 @@ during latex export it will output
 
 ;;;; Compilation
 
+(defcustom org-latex-compiler-file-string "%% Indented LaTeX compiler: %s\n"
+  "LaTeX compiler format-string.
+See also `org-latex-compiler'."
+  :group 'org-export-latex
+  :type '(choice
+	  (const :tag "Comment" "%% Indented LaTeX compiler: %s\n")
+	  (const :tag "latex-mode file variable" "%% -*- latex-run-command: %s -*-\n")
+	  (const :tag "AUCTeX file variable" "%% -*- LaTeX-command: %s -*-\n")
+	  (string :tag "custom format" "%% %s"))
+  :version "25.1"
+  :package-version '(Org . "9.0"))
+
+(defcustom org-latex-compiler "pdflatex"
+  "LaTeX compiler to use.
+
+Must be an element in `org-latex-compilers' or the empty quote.
+Can also be set in buffers via #+LATEX_COMPILER.  See also
+`org-latex-compiler-file-string'."
+  :group 'org-export-latex
+  :type '(choice
+	  (const :tag "pdfLaTeX" "pdflatex")
+	  (const :tag "XeLaTeX"  "xelatex")
+	  (const :tag "LuaLaTeX" "lualatex")
+	  (const :tag "Unset" ""))
+  :version "25.1"
+  :package-version '(Org . "9.0"))
+
+(defconst org-latex-compilers '("pdflatex" "xelatex" "lualatex")
+  "Known LaTeX compilers.
+See also `org-latex-compiler'.")
+
+(defcustom org-latex-bib-compiler "bibtex"
+  "Command to process a LaTeX file's bibliography.
+
+The shorthand %bib in `org-latex-pdf-process' is replaced with
+this value.
+
+A better approach is to use a compiler suit such as `latexmk'."
+  :group 'org-export-latex
+  :type '(choice (const :tag "BibTeX" "bibtex")
+		 (const :tag "Biber" "biber")
+		 (string :tag "Other process"))
+  :version "25.1"
+  :package-version '(Org . "9.0"))
+
 (defcustom org-latex-pdf-process
-  '("pdflatex -interaction nonstopmode -output-directory %o %f"
-    "pdflatex -interaction nonstopmode -output-directory %o %f"
-    "pdflatex -interaction nonstopmode -output-directory %o %f")
+  '("%latex -interaction nonstopmode -output-directory %o %f"
+    "%latex -interaction nonstopmode -output-directory %o %f"
+    "%latex -interaction nonstopmode -output-directory %o %f")
   "Commands to process a LaTeX file to a PDF file.
 This is a list of strings, each of them will be given to the
 shell as a command.  %f in the command will be replaced by the
 full file name, %b by the file base name (i.e. without directory
-and extension parts) and %o by the base directory of the file.
+and extension parts), %o by the base directory of the file,
+%latex is the LaTeX compiler (see `org-latex-compiler'), and %bib
+is the BibTeX-like compiler (see `org-latex-bib-compiler').
 
 The reason why this is a list is that it usually takes several
 runs of `pdflatex', maybe mixed with a call to `bibtex'.  Org
@@ -1055,18 +1103,8 @@ does not have a clever mechanism to detect which of these
 commands have to be run to get to a stable result, and it also
 does not do any error checking.
 
-By default, Org uses 3 runs of `pdflatex' to do the processing.
-If you have texi2dvi on your system and if that does not cause
-the infamous egrep/locale bug:
-
-     http://lists.gnu.org/archive/html/bug-texinfo/2010-03/msg00031.html
-
-then `texi2dvi' is the superior choice as it automates the LaTeX
-build process by calling the \"correct\" combinations of
-auxiliary programs.  Org does offer `texi2dvi' as one of the
-customize options.  Alternatively, `rubber' and `latexmk' also
-provide similar functionality.  The latter supports `biber' out
-of the box.
+Consider a smart LaTeX compiler such as `texi2dvi' or `latexmk',
+which calls the \"correct\" combinations of auxiliary programs.
 
 Alternatively, this may be a Lisp function that does the
 processing, so you could use this to apply the machinery of
@@ -1076,36 +1114,22 @@ file name as its single argument."
   :type '(choice
 	  (repeat :tag "Shell command sequence"
 		  (string :tag "Shell command"))
-	  (const :tag "2 runs of pdflatex"
-		 ("pdflatex -interaction nonstopmode -output-directory %o %f"
-		   "pdflatex -interaction nonstopmode -output-directory %o %f"))
-	  (const :tag "3 runs of pdflatex"
-		 ("pdflatex -interaction nonstopmode -output-directory %o %f"
-		   "pdflatex -interaction nonstopmode -output-directory %o %f"
-		   "pdflatex -interaction nonstopmode -output-directory %o %f"))
-	  (const :tag "pdflatex,bibtex,pdflatex,pdflatex"
-		 ("pdflatex -interaction nonstopmode -output-directory %o %f"
-		   "bibtex %b"
-		   "pdflatex -interaction nonstopmode -output-directory %o %f"
-		   "pdflatex -interaction nonstopmode -output-directory %o %f"))
-	  (const :tag "2 runs of xelatex"
-		 ("xelatex -interaction nonstopmode -output-directory %o %f"
-		  "xelatex -interaction nonstopmode -output-directory %o %f"))
-	  (const :tag "3 runs of xelatex"
-		 ("xelatex -interaction nonstopmode -output-directory %o %f"
-		  "xelatex -interaction nonstopmode -output-directory %o %f"
-		  "xelatex -interaction nonstopmode -output-directory %o %f"))
-	  (const :tag "xelatex,bibtex,xelatex,xelatex"
-		 ("xelatex -interaction nonstopmode -output-directory %o %f"
-		  "bibtex %b"
-		  "xelatex -interaction nonstopmode -output-directory %o %f"
-		  "xelatex -interaction nonstopmode -output-directory %o %f"))
+	  (const :tag "2 runs of latex"
+		 ("%latex -interaction nonstopmode -output-directory %o %f"
+		  "%latex -interaction nonstopmode -output-directory %o %f"))
+	  (const :tag "3 runs of latex"
+		 ("%latex -interaction nonstopmode -output-directory %o %f"
+		  "%latex -interaction nonstopmode -output-directory %o %f"
+		  "%latex -interaction nonstopmode -output-directory %o %f"))
+	  (const :tag "latex,bibtex,latex,latex"
+		 ("%latex -interaction nonstopmode -output-directory %o %f"
+		  "%bib %b"
+		  "%latex -interaction nonstopmode -output-directory %o %f"
+		  "%latex -interaction nonstopmode -output-directory %o %f"))
 	  (const :tag "texi2dvi"
-		 ("texi2dvi -p -b -V %f"))
-	  (const :tag "rubber"
-		 ("rubber -d --into %o %f"))
+		 ("LATEX=\"%latex\" texi2dvi -p -b -V %f"))
 	  (const :tag "latexmk"
-		 ("latexmk -g -pdf %f"))
+		 ("latexmk -g -pdflatex=\"%latex\" %f"))
 	  (function)))
 
 (defcustom org-latex-logfiles-extensions
@@ -1346,6 +1370,30 @@ Return the new header."
 		  ""))
 	 t t header 0)))))
 
+(defun org-latex--remove-packages (pkg-alist info)
+  "Remove packages based on the current LaTeX compiler.
+
+If the fourth argument of an element is set in pkg-alist, and it
+is not a member of the LaTeX compiler of the document, the packages
+is removed.  See also `org-latex-compiler'.
+
+Return modified pkg-alist."
+  (let ((compiler (or (plist-get info :latex-compiler) "")))
+    (if (member-ignore-case compiler org-latex-compilers)
+	(delq nil
+	      (mapcar
+	       (lambda (pkg)
+		 (unless (and
+			  (listp pkg)
+			  (let ((third (nth 3 pkg)))
+			    (and third
+				 (not (member-ignore-case
+				       compiler
+				       (if (listp third) third (list third)))))))
+		   pkg))
+	       pkg-alist))
+      pkg-alist)))
+
 (defun org-latex--find-verb-separator (s)
   "Return a character not used in string S.
 This is used to choose a separator for constructs like \\verb."
@@ -1432,22 +1480,20 @@ just outside of it."
        (org-export-data
 	(org-export-get-footnote-definition ref info) info))))
    ;; Find every footnote reference in ELEMENT.
-   (let* (all-refs
-	  search-refs			; For byte-compiler.
-	  (search-refs
-	   (function
-	    (lambda (data)
-	      ;; Return a list of all footnote references never seen
-	      ;; before in DATA.
-	      (org-element-map data 'footnote-reference
-		(lambda (ref)
-		  (when (org-export-footnote-first-reference-p ref info)
-		    (push ref all-refs)
-		    (when (eq (org-element-property :type ref) 'standard)
-		      (funcall search-refs
-			       (org-export-get-footnote-definition ref info)))))
-		info)
-	      (reverse all-refs)))))
+   (letrec ((all-refs)
+	    (search-refs
+	     (lambda (data)
+	       ;; Return a list of all footnote references never seen
+	       ;; before in DATA.
+	       (org-element-map data 'footnote-reference
+		 (lambda (ref)
+		   (when (org-export-footnote-first-reference-p ref info)
+		     (push ref all-refs)
+		     (when (eq (org-element-property :type ref) 'standard)
+		       (funcall search-refs
+				(org-export-get-footnote-definition ref info)))))
+		 info)
+	       (reverse all-refs))))
      (funcall search-refs element))
    ""))
 
@@ -1475,8 +1521,8 @@ INFO is a plist used as a communication channel."
       (?L . ,(capitalize language))
       (?D . ,(org-export-get-date info)))))
 
-(defun org-latex--make-header (info)
-  "Return a formatted LaTeX header.
+(defun org-latex--make-preamble (info)
+  "Return a formatted LaTeX preamble.
 INFO is a plist used as a communication channel."
   (let* ((class (plist-get info :latex-class))
 	    (class-options (plist-get info :latex-class-options))
@@ -1495,13 +1541,24 @@ INFO is a plist used as a communication channel."
 	    (org-element-normalize-string
 	     (org-splice-latex-header
 	      document-class-string
-	      org-latex-default-packages-alist
-	      org-latex-packages-alist nil
-	      (concat (org-element-normalize-string
-		       (plist-get info :latex-header))
-		      (plist-get info :latex-header-extra)))))
+	      (org-latex--remove-packages
+	       org-latex-default-packages-alist info)
+	      (org-latex--remove-packages
+	       org-latex-packages-alist info)
+	      nil
+	      (mapconcat 'org-element-normalize-string
+			 (list (plist-get info :latex-header)
+			       (plist-get info :latex-header-extra)) ""))))
 	   info)
 	  info))))
+
+(defun org-latex--insert-compiler (info)
+  "Insert LaTeX_compiler info into the document.
+INFO is a plist used as a communication channel."
+  (let ((compiler (plist-get info :latex-compiler)))
+       (and (org-string-nw-p org-latex-compiler-file-string)
+	    (string-match-p (regexp-opt org-latex-compilers) (or compiler ""))
+	    (format org-latex-compiler-file-string compiler))))
 
 
 ;;; Template
@@ -1516,8 +1573,10 @@ holding export options."
      ;; Time-stamp.
      (and (plist-get info :time-stamp-file)
 	  (format-time-string "%% Created %Y-%m-%d %a %H:%M\n"))
+     ;; LaTeX compiler.
+     (org-latex--insert-compiler info)
      ;; Document class and packages.
-     (org-latex--make-header info)
+     (org-latex--make-preamble info)
      ;; Possibly limit depth for headline numbering.
      (let ((sec-num (plist-get info :section-numbers)))
        (when (integerp sec-num)
@@ -1583,7 +1642,7 @@ holding export options."
 
 ;;;; Bold
 
-(defun org-latex-bold (bold contents info)
+(defun org-latex-bold (_bold contents info)
   "Transcode BOLD from Org to LaTeX.
 CONTENTS is the text with bold markup.  INFO is a plist holding
 contextual information."
@@ -1602,7 +1661,7 @@ holding contextual information."
 
 ;;;; Clock
 
-(defun org-latex-clock (clock contents info)
+(defun org-latex-clock (clock _contents info)
   "Transcode a CLOCK element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -1618,7 +1677,7 @@ information."
 
 ;;;; Code
 
-(defun org-latex-code (code contents info)
+(defun org-latex-code (code _contents info)
   "Transcode a CODE object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist used as a communication
 channel."
@@ -1648,7 +1707,7 @@ holding contextual information.  See `org-export-data'."
 
 ;;;; Entity
 
-(defun org-latex-entity (entity contents info)
+(defun org-latex-entity (entity _contents _info)
   "Transcode an ENTITY object from Org to LaTeX.
 CONTENTS are the definition itself.  INFO is a plist holding
 contextual information."
@@ -1657,7 +1716,7 @@ contextual information."
 
 ;;;; Example Block
 
-(defun org-latex-example-block (example-block contents info)
+(defun org-latex-example-block (example-block _contents info)
   "Transcode an EXAMPLE-BLOCK element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -1676,7 +1735,7 @@ information."
 
 ;;;; Export Block
 
-(defun org-latex-export-block (export-block contents info)
+(defun org-latex-export-block (export-block _contents _info)
   "Transcode a EXPORT-BLOCK element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (when (member (org-element-property :type export-block) '("LATEX" "TEX"))
@@ -1685,7 +1744,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Export Snippet
 
-(defun org-latex-export-snippet (export-snippet contents info)
+(defun org-latex-export-snippet (export-snippet _contents _info)
   "Transcode a EXPORT-SNIPPET object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (when (eq (org-export-snippet-backend export-snippet) 'latex)
@@ -1694,7 +1753,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Fixed Width
 
-(defun org-latex-fixed-width (fixed-width contents info)
+(defun org-latex-fixed-width (fixed-width _contents info)
   "Transcode a FIXED-WIDTH element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (org-latex--wrap-label
@@ -1707,7 +1766,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Footnote Reference
 
-(defun org-latex-footnote-reference (footnote-reference contents info)
+(defun org-latex-footnote-reference (footnote-reference _contents info)
   "Transcode a FOOTNOTE-REFERENCE element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (concat
@@ -1865,7 +1924,7 @@ holding contextual information."
 		    (concat headline-label pre-blanks contents))))))))
 
 (defun org-latex-format-headline-default-function
-  (todo todo-type priority text tags info)
+    (todo _todo-type priority text tags info)
   "Default format function for a headline.
 See `org-latex-format-headline-function' for details."
   (concat
@@ -1880,7 +1939,7 @@ See `org-latex-format-headline-function' for details."
 
 ;;;; Horizontal Rule
 
-(defun org-latex-horizontal-rule (horizontal-rule contents info)
+(defun org-latex-horizontal-rule (horizontal-rule _contents info)
   "Transcode an HORIZONTAL-RULE object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (let ((attr (org-export-read-attribute :attr_latex horizontal-rule))
@@ -1902,7 +1961,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Inline Src Block
 
-(defun org-latex-inline-src-block (inline-src-block contents info)
+(defun org-latex-inline-src-block (inline-src-block _contents info)
   "Transcode an INLINE-SRC-BLOCK element from Org to LaTeX.
 CONTENTS holds the contents of the item.  INFO is a plist holding
 contextual information."
@@ -1957,7 +2016,7 @@ holding contextual information."
 	     todo todo-type priority title tags contents info)))
 
 (defun org-latex-format-inlinetask-default-function
-  (todo todo-type priority title tags contents info)
+  (todo _todo-type priority title tags contents info)
   "Default format function for a inlinetasks.
 See `org-latex-format-inlinetask-function' for details."
   (let ((full-title
@@ -1982,7 +2041,7 @@ See `org-latex-format-inlinetask-function' for details."
 
 ;;;; Italic
 
-(defun org-latex-italic (italic contents info)
+(defun org-latex-italic (_italic contents info)
   "Transcode ITALIC from Org to LaTeX.
 CONTENTS is the text with italic markup.  INFO is a plist holding
 contextual information."
@@ -2054,7 +2113,7 @@ contextual information."
 
 ;;;; Keyword
 
-(defun org-latex-keyword (keyword contents info)
+(defun org-latex-keyword (keyword _contents info)
   "Transcode a KEYWORD element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (let ((key (org-element-property :key keyword))
@@ -2092,7 +2151,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Latex Environment
 
-(defun org-latex-latex-environment (latex-environment contents info)
+(defun org-latex-latex-environment (latex-environment _contents info)
   "Transcode a LATEX-ENVIRONMENT element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (when (plist-get info :with-latex)
@@ -2112,22 +2171,20 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Latex Fragment
 
-(defun org-latex-latex-fragment (latex-fragment contents info)
+(defun org-latex-latex-fragment (latex-fragment _contents _info)
   "Transcode a LATEX-FRAGMENT object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (let ((value (org-element-property :value latex-fragment)))
     ;; Trim math markers since the fragment is enclosed within
     ;; a latex-math-block object anyway.
-    (cond ((string-match "\\`\\(\\$\\{1,2\\}\\)\\([^\000]*\\)\\1\\'" value)
-	   (match-string 2 value))
-	  ((string-match "\\`\\\\(\\([^\000]*\\)\\\\)\\'" value)
-	   (match-string 1 value))
+    (cond ((string-match-p "\\`\\$[^$]" value) (substring value 1 -1))
+	  ((string-prefix-p "\\(" value) (substring value 2 -2))
 	  (t value))))
 
 
 ;;;; Line Break
 
-(defun org-latex-line-break (line-break contents info)
+(defun org-latex-line-break (_line-break _contents _info)
   "Transcode a LINE-BREAK object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   "\\\\\n")
@@ -2353,7 +2410,7 @@ INFO is a plist holding contextual information.  See
 
 ;;;; Node Property
 
-(defun org-latex-node-property (node-property contents info)
+(defun org-latex-node-property (node-property _contents _info)
   "Transcode a NODE-PROPERTY element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -2365,7 +2422,7 @@ information."
 
 ;;;; Paragraph
 
-(defun org-latex-paragraph (paragraph contents info)
+(defun org-latex-paragraph (_paragraph contents _info)
   "Transcode a PARAGRAPH element from Org to LaTeX.
 CONTENTS is the contents of the paragraph, as a string.  INFO is
 the plist used as a communication channel."
@@ -2436,7 +2493,7 @@ contextual information."
 
 ;;;; Planning
 
-(defun org-latex-planning (planning contents info)
+(defun org-latex-planning (planning _contents info)
   "Transcode a PLANNING element from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -2470,7 +2527,7 @@ information."
 
 ;;;; Property Drawer
 
-(defun org-latex-property-drawer (property-drawer contents info)
+(defun org-latex-property-drawer (_property-drawer contents _info)
   "Transcode a PROPERTY-DRAWER element from Org to LaTeX.
 CONTENTS holds the contents of the drawer.  INFO is a plist
 holding contextual information."
@@ -2531,7 +2588,7 @@ it."
     info)
   data)
 
-(defun org-latex-matrices (matrices contents info)
+(defun org-latex-matrices (matrices contents _info)
   "Transcode a MATRICES element from Org to LaTeX.
 CONTENTS is a string.  INFO is a plist used as a communication
 channel."
@@ -2541,7 +2598,7 @@ channel."
 	    (t "\\[\n%s\\]"))
 	  contents))
 
-(defun org-latex-matrices-tree-filter (tree backend info)
+(defun org-latex-matrices-tree-filter (tree _backend info)
   (org-latex--wrap-latex-matrices tree info))
 
 ;;;; Pseudo Object: LaTeX Math Block
@@ -2554,16 +2611,15 @@ channel."
 DATA is a parse tree or a secondary string.  INFO is a plist
 containing export options.  Modify DATA by side-effect and return it."
   (let ((valid-object-p
-	 (function
-	  ;; Non-nil when OBJ can be added to the latex math block.
-	  (lambda (obj)
-	    (case (org-element-type obj)
-	      (entity (org-element-property :latex-math-p obj))
-	      (latex-fragment
-	       (let ((value (org-element-property :value obj)))
-		 (or (org-string-match-p "\\`\\\\([^\000]*\\\\)\\'" value)
-		     (org-string-match-p "\\`\\$[^\000]*\\$\\'" value))))
-	      ((subscript superscript) t))))))
+	 ;; Non-nil when OBJ can be added to the latex math block.
+	 (lambda (obj)
+	   (pcase (org-element-type obj)
+	     (`entity (org-element-property :latex-math-p obj))
+	     (`latex-fragment
+	      (let ((value (org-element-property :value obj)))
+		(or (string-prefix-p "\\(" value)
+		    (string-match-p "\\`\\$[^$]" value))))
+	     ((or `subscript `superscript) t)))))
     (org-element-map data '(entity latex-fragment subscript superscript)
       (lambda (object)
 	;; Skip objects already wrapped.
@@ -2598,15 +2654,15 @@ containing export options.  Modify DATA by side-effect and return it."
     ;; Return updated DATA.
     data))
 
-(defun org-latex-math-block-tree-filter (tree backend info)
+(defun org-latex-math-block-tree-filter (tree _backend info)
   (org-latex--wrap-latex-math-block tree info))
 
-(defun org-latex-math-block-options-filter (info backend)
+(defun org-latex-math-block-options-filter (info _backend)
   (dolist (prop '(:author :date :title) info)
     (plist-put info prop
 	       (org-latex--wrap-latex-math-block (plist-get info prop) info))))
 
-(defun org-latex-math-block (math-block contents info)
+(defun org-latex-math-block (_math-block contents _info)
   "Transcode a MATH-BLOCK object from Org to LaTeX.
 CONTENTS is a string.  INFO is a plist used as a communication
 channel."
@@ -2634,7 +2690,7 @@ contextual information."
 
 ;;;; Section
 
-(defun org-latex-section (section contents info)
+(defun org-latex-section (_section contents _info)
   "Transcode a SECTION element from Org to LaTeX.
 CONTENTS holds the contents of the section.  INFO is a plist
 holding contextual information."
@@ -2660,7 +2716,7 @@ holding contextual information."
 
 ;;;; Src Block
 
-(defun org-latex-src-block (src-block contents info)
+(defun org-latex-src-block (src-block _contents info)
   "Transcode a SRC-BLOCK element from Org to LaTeX.
 CONTENTS holds the contents of the item.  INFO is a plist holding
 contextual information."
@@ -2749,7 +2805,7 @@ contextual information."
 							  "\n")))))
 		   (org-export-format-code
 		    (car code-info)
-		    (lambda (loc num ref)
+		    (lambda (loc _num ref)
 		      (concat
 		       loc
 		       (when ref
@@ -2812,21 +2868,21 @@ contextual information."
 				   (org-split-string (car code-info) "\n")))))
 	      (org-export-format-code
 	       (car code-info)
-	       (lambda (loc num ref)
+	       (lambda (loc _num ref)
 		 (concat
 		  loc
 		  (when ref
 		    ;; Ensure references are flushed to the right,
 		    ;; separated with 6 spaces from the widest line of
 		    ;; code
-		    (concat (make-string (+ (- max-width (length loc)) 6) ? )
+		    (concat (make-string (+ (- max-width (length loc)) 6) ?\s)
 			    (format "(%s)" ref)))))
 	       nil (and retain-labels (cdr code-info))))))))))))
 
 
 ;;;; Statistics Cookie
 
-(defun org-latex-statistics-cookie (statistics-cookie contents info)
+(defun org-latex-statistics-cookie (statistics-cookie _contents _info)
   "Transcode a STATISTICS-COOKIE object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
   (replace-regexp-in-string
@@ -2835,7 +2891,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 
 ;;;; Strike-Through
 
-(defun org-latex-strike-through (strike-through contents info)
+(defun org-latex-strike-through (_strike-through contents info)
   "Transcode STRIKE-THROUGH from Org to LaTeX.
 CONTENTS is the text with strike-through markup.  INFO is a plist
 holding contextual information."
@@ -2848,8 +2904,7 @@ holding contextual information."
   "Transcode a subscript or superscript object.
 OBJECT is an Org object.  INFO is a plist used as a communication
 channel."
-  (let ((type (org-element-type object))
-	(output ""))
+  (let ((output ""))
     (org-element-map (org-element-contents object)
 	(cons 'plain-text org-element-all-objects)
       (lambda (obj)
@@ -2881,7 +2936,7 @@ channel."
 	    output
 	    (and (> (length output) 1) "}"))))
 
-(defun org-latex-subscript (subscript contents info)
+(defun org-latex-subscript (subscript _contents info)
   "Transcode a SUBSCRIPT object from Org to LaTeX.
 CONTENTS is the contents of the object.  INFO is a plist holding
 contextual information."
@@ -2890,7 +2945,7 @@ contextual information."
 
 ;;;; Superscript
 
-(defun org-latex-superscript (superscript contents info)
+(defun org-latex-superscript (superscript _contents info)
   "Transcode a SUPERSCRIPT object from Org to LaTeX.
 CONTENTS is the contents of the object.  INFO is a plist holding
 contextual information."
@@ -3240,7 +3295,7 @@ a communication channel."
 
 ;;;; Target
 
-(defun org-latex-target (target contents info)
+(defun org-latex-target (target _contents info)
   "Transcode a TARGET object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -3249,7 +3304,7 @@ information."
 
 ;;;; Timestamp
 
-(defun org-latex-timestamp (timestamp contents info)
+(defun org-latex-timestamp (timestamp _contents info)
   "Transcode a TIMESTAMP object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -3265,7 +3320,7 @@ information."
 
 ;;;; Underline
 
-(defun org-latex-underline (underline contents info)
+(defun org-latex-underline (_underline contents info)
   "Transcode UNDERLINE from Org to LaTeX.
 CONTENTS is the text with underline markup.  INFO is a plist
 holding contextual information."
@@ -3274,7 +3329,7 @@ holding contextual information."
 
 ;;;; Verbatim
 
-(defun org-latex-verbatim (verbatim contents info)
+(defun org-latex-verbatim (verbatim _contents info)
   "Transcode a VERBATIM object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist used as a communication
 channel."
@@ -3432,6 +3487,14 @@ create a log buffer and do not bother removing log files.
 Return PDF file name or an error if it couldn't be produced."
   (let* ((base-name (file-name-sans-extension (file-name-nondirectory texfile)))
 	 (full-name (file-truename texfile))
+	 (compiler (or (with-temp-buffer
+			 (save-excursion (insert-file-contents full-name))
+			 (when (and (search-forward-regexp
+				     (regexp-opt org-latex-compilers) (line-end-position 2) t)
+				    (progn (beginning-of-line)
+					   (looking-at-p "%")))
+			   (match-string 0)))
+		       "pdflatex"))
 	 (out-dir (file-name-directory texfile))
 	 ;; Properly set working directory for compilation.
 	 (default-directory (if (file-name-absolute-p texfile)
@@ -3446,20 +3509,25 @@ Return PDF file name or an error if it couldn't be produced."
        ((functionp org-latex-pdf-process)
 	(funcall org-latex-pdf-process (shell-quote-argument texfile)))
        ;; A list is provided: Replace %b, %f and %o with appropriate
-       ;; values in each command before applying it.  Output is
-       ;; redirected to "*Org PDF LaTeX Output*" buffer.
+       ;; values in each command before applying it.  Note that while
+       ;; "%latex" and "%bibtex" is used in `org-latex-pdf-process',
+       ;; they are replaced with "%L" and "%B" to adhere to
+       ;; format-spec.  Output is redirected to "*Org PDF LaTeX
+       ;; Output*" buffer.
        ((consp org-latex-pdf-process)
 	(let ((outbuf (and (not snippet)
-			   (get-buffer-create "*Org PDF LaTeX Output*"))))
+			   (get-buffer-create "*Org PDF LaTeX Output*")))
+	      (spec (list (cons ?B  (shell-quote-argument org-latex-bib-compiler))
+			  (cons ?L (shell-quote-argument compiler))
+			  (cons ?b (shell-quote-argument base-name))
+			  (cons ?f (shell-quote-argument full-name))
+			  (cons ?o (shell-quote-argument out-dir)))))
 	  (dolist (command org-latex-pdf-process)
-	    (shell-command
-	     (replace-regexp-in-string
-	      "%b" (shell-quote-argument base-name)
-	      (replace-regexp-in-string
-	       "%f" (shell-quote-argument full-name)
-	       (replace-regexp-in-string
-		"%o" (shell-quote-argument out-dir) command t t) t t) t t)
-	     outbuf))
+	    (let ((c (replace-regexp-in-string
+		      "%\\(latex\\|bibtex\\)\\>"
+		      (lambda (str) (upcase (substring str 0 2)))
+		      command)))
+	      (shell-command (format-spec c spec) outbuf)))
 	  ;; Collect standard errors from output buffer.
 	  (setq warnings (and (not snippet)
 			      (org-latex--collect-warnings outbuf)))))

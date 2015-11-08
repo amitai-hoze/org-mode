@@ -94,7 +94,7 @@ Return value is the point at the beginning of the table."
   (goto-char (org-table-begin)))
 
 (defun org-plot/collect-options (&optional params)
-  "Collect options from an org-plot '#+Plot:' line.
+  "Collect options from an org-plot `#+Plot:' line.
 Accepts an optional property list PARAMS, to which the options
 will be added.  Returns the resulting property list."
   (interactive)
@@ -119,10 +119,9 @@ will be added.  Returns the resulting property list."
 Pass PARAMS through to `orgtbl-to-generic' when exporting TABLE."
   (with-temp-file
       data-file
-    (make-local-variable 'org-plot-timestamp-fmt)
-    (setq org-plot-timestamp-fmt (or
-				  (plist-get params :timefmt)
-				  "%Y-%m-%d-%H:%M:%S"))
+    (setq-local org-plot-timestamp-fmt (or
+					(plist-get params :timefmt)
+					"%Y-%m-%d-%H:%M:%S"))
     (insert (orgtbl-to-generic
 	     table
 	     (org-combine-plists

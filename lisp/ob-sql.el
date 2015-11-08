@@ -1,4 +1,4 @@
-;;; ob-sql.el --- org-babel functions for sql evaluation
+;;; ob-sql.el --- Babel Functions for SQL            -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
@@ -78,7 +78,7 @@
 (defun org-babel-expand-body:sql (body params)
   "Expand BODY according to the values of PARAMS."
   (org-babel-sql-expand-vars
-   body (mapcar #'cdr (org-babel-get-header params :var))))
+   body (org-babel--get-vars params)))
 
 (defun org-babel-sql-dbstring-mysql (host port user password database)
   "Make MySQL cmd line args for database connection.  Pass nil to omit that arg."
@@ -119,7 +119,7 @@ This function is called by `org-babel-execute-src-block'."
                     ('dbi (format "dbish --batch %s < %s | sed '%s' > %s"
 				  (or cmdline "")
 				  (org-babel-process-file-name in-file)
-				  "/^+/d;s/^\|//;s/(NULL)/ /g;$d"
+				  "/^+/d;s/^|//;s/(NULL)/ /g;$d"
 				  (org-babel-process-file-name out-file)))
                     ('monetdb (format "mclient -f tab %s < %s > %s"
                                       (or cmdline "")
@@ -202,7 +202,7 @@ This function is called by `org-babel-execute-src-block'."
    (lambda (pair)
      (setq body
 	   (replace-regexp-in-string
-	    (format "\$%s" (car pair))  ;FIXME: "\$" == "$"!
+	    (format "$%s" (car pair))
 	    (let ((val (cdr pair)))
               (if (listp val)
                   (let ((data-file (org-babel-temp-file "sql-data-")))
@@ -217,7 +217,7 @@ This function is called by `org-babel-execute-src-block'."
    vars)
   body)
 
-(defun org-babel-prep-session:sql (session params)
+(defun org-babel-prep-session:sql (_session _params)
   "Raise an error because Sql sessions aren't implemented."
   (error "SQL sessions not yet implemented"))
 

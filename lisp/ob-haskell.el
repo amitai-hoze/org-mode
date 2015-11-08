@@ -1,4 +1,4 @@
-;;; ob-haskell.el --- org-babel functions for haskell evaluation
+;;; ob-haskell.el --- Babel Functions for Haskell    -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
@@ -60,14 +60,14 @@
 (defvar org-babel-haskell-eoe "\"org-babel-haskell-eoe\"")
 
 (defcustom org-babel-haskell-command
-  (if (boundp 'maxima-command) maxima-command "runhaskell")
+  (if (boundp 'haskell-command) haskell-command "runhaskell")
   "Command used to run haskell files on the shell."
   :group 'org-babel
   :type 'string)
 
 (defun org-babel-haskell-expand (body params)
-  "Expand a block of Maxima code according to its header arguments."
-  (let ((vars (mapcar #'cdr (org-babel-get-header params :var))))
+  "Expand a block of Haskell code according to its header arguments."
+  (let ((vars (org-babel--get-vars params)))
     (mapconcat 'identity
 	       (list
 		;; graphic output
@@ -127,8 +127,7 @@ This function is called by `org-babel-execute-src-block'."
 		 (temp (call-process-shell-command (concat "cd " path)))
 		 (results (reverse (split-string (shell-command-to-string (concat path "/" executable)) "\n"))))
 	    (org-babel-haskell-process-results results params)))
-      (let* ((vars (mapcar #'cdr (org-babel-get-header params :var)))
-	     (session (cdr (assoc :session params)))
+      (let* ((session (cdr (assoc :session params)))
 	     (full-body (org-babel-expand-body:generic
 			 body params
 			 (org-babel-variable-assignments:haskell params)))
@@ -174,7 +173,7 @@ This function is called by `org-babel-execute-src-block'."
       (match-string 1 string)
     string))
 
-(defun org-babel-haskell-initiate-session (&optional session params)
+(defun org-babel-haskell-initiate-session (&optional _session _params)
   "Initiate a haskell session.
 If there is not a current inferior-process-buffer in SESSION
 then create one.  Return the initialized session."
@@ -209,7 +208,7 @@ then create one.  Return the initialized session."
 	    (format (if ghci "let %s = %s" "%s = %s")
 		    (car pair)
 		    (org-babel-haskell-var-to-haskell (cdr pair))))
-	  (mapcar #'cdr (org-babel-get-header params :var))))
+	  (org-babel--get-vars params)))
 
 (defun org-babel-haskell-var-to-haskell (var)
   "Convert an elisp value VAR into a haskell variable.

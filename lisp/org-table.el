@@ -1,4 +1,4 @@
-;;; org-table.el --- The table editor for Org mode
+;;; org-table.el --- The Table Editor for Org        -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2004-2015 Free Software Foundation, Inc.
 
@@ -36,6 +36,7 @@
 
 (eval-when-compile
   (require 'cl))
+(require 'cl-lib)
 (require 'org)
 
 (declare-function org-element-at-point "org-element" ())
@@ -47,12 +48,18 @@
 (declare-function org-element-map "org-element"
 		  (data types fun
 			&optional info first-match no-recursion with-affiliated))
+(declare-function org-element-parse-buffer "org-element"
+		  (&optional granularity visible-only))
 (declare-function org-element-property "org-element" (property element))
+(declare-function org-element-type "org-element" (element))
 
-(declare-function org-export-string-as "ox"
-		  (string backend &optional body-only ext-plist))
-(declare-function org-export-create-backend "ox")
-(declare-function org-export-get-backend "ox" (name))
+(declare-function org-export-create-backend "org-export" (&rest rest))
+(declare-function org-export-data-with-backend "org-export" (arg1 arg2 arg3))
+(declare-function org-export-first-sibling-p "org-export" (arg1 arg2))
+(declare-function org-export-get-backend "org-export" (arg1))
+(declare-function org-export-get-environment "org-export" (&optional arg1 arg2 arg3))
+(declare-function org-export-table-has-special-column-p "org-export" (arg1))
+(declare-function org-export-table-row-is-special-p "org-export" (arg1 arg2))
 
 (declare-function calc-eval "calc" (str &optional separator &rest args))
 
@@ -60,6 +67,7 @@
 (defvar orgtbl-mode-menu) ; defined when orgtbl mode get initialized
 (defvar constants-unit-system)
 (defvar org-table-follow-field-mode)
+(defvar sort-fold-case)
 
 (defvar orgtbl-after-send-table-hook nil
   "Hook for functions attaching to `C-c C-c', if the table is sent.
@@ -278,9 +286,9 @@ relies on the variables to be present in the list."
 
 (defcustom org-table-duration-custom-format 'hours
   "Format for the output of calc computations like $1+$2;t.
-The default value is 'hours, and will output the results as a
-number of hours.  Other allowed values are 'seconds, 'minutes and
-'days, and the output will be a fraction of seconds, minutes or
+The default value is `hours', and will output the results as a
+number of hours.  Other allowed values are `seconds', `minutes' and
+`days', and the output will be a fraction of seconds, minutes or
 days."
   :group 'org-table-calculation
   :version "24.1"
@@ -323,7 +331,7 @@ The car of each element is a name of a constant, without the `$' before it.
 The cdr is the value as a string.  For example, if you'd like to use the
 speed of light in a formula, you would configure
 
-  (setq org-table-formula-constants '((\"c\" . \"299792458.\")))
+  (setq org-table-formula-constants \\='((\"c\" . \"299792458.\")))
 
 and then use it in an equation like `$1*$c'.
 
@@ -337,7 +345,9 @@ Constants can also be defined on a per-file basis using a line like
 
 (defcustom org-table-allow-automatic-line-recalculation t
   "Non-nil means lines marked with |#| or |*| will be recomputed automatically.
-Automatically means when TAB or RET or C-c C-c are pressed in the line."
+\\<org-mode-map>\
+Automatically means when TAB or RET or \\[org-ctrl-c-ctrl-c] \
+are pressed in the line."
   :group 'org-table-calculation
   :type 'boolean)
 
@@ -536,7 +546,7 @@ SIZE is a string Columns x Rows like for example \"3x2\"."
 	(beginning-of-line 1)
       (newline))
     ;; (mapcar (lambda (x) (insert line)) (make-list rows t))
-    (dotimes (i rows) (insert line))
+    (dotimes (_ rows) (insert line))
     (goto-char pos)
     (if (> rows 1)
 	;; Insert a hline after the first row.
@@ -555,9 +565,9 @@ slightly, to make sure a beginning of line in the first line is included.
 SEPARATOR specifies the field separator in the lines.  It can have the
 following values:
 
-'(4)     Use the comma as a field separator
-'(16)    Use a TAB as field separator
-'(64)    Prompt for a regular expression as field separator
+(4)     Use the comma as a field separator
+(16)    Use a TAB as field separator
+(64)    Prompt for a regular expression as field separator
 integer  When a number, use that many spaces as field separator
 regexp   When a regular expression, use it to match the separator
 nil      When nil, the command tries to be smart and figure out the
@@ -715,13 +725,11 @@ This is being used to correctly align a single field after TAB or RET.")
 (defvar org-table-last-column-widths nil
   "List of max width of fields in each column.
 This is being used to correctly align a single field after TAB or RET.")
-(defvar org-table-formula-debug nil
+(defvar-local org-table-formula-debug nil
   "Non-nil means debug table formulas.
 When nil, simply write \"#ERROR\" in corrupted fields.")
-(make-variable-buffer-local 'org-table-formula-debug)
-(defvar org-table-overlay-coordinates nil
+(defvar-local org-table-overlay-coordinates nil
   "Overlay coordinates after each align of a table.")
-(make-variable-buffer-local 'org-table-overlay-coordinates)
 
 (defvar org-last-recalc-line nil)
 (defvar org-table-do-narrow t)   ; for dynamic scoping
@@ -1256,7 +1264,7 @@ is always the old value."
     (forward-char 1) ""))
 
 ;;;###autoload
-(defun org-table-field-info (arg)
+(defun org-table-field-info (_arg)
   "Show info about the current field, and highlight any reference at point."
   (interactive "P")
   (unless (org-at-table-p) (user-error "Not at a table"))
@@ -1883,10 +1891,10 @@ Note that horizontal lines disappear."
   (let* ((table (delete 'hline (org-table-to-lisp)))
 	 (dline_old (org-table-current-line))
 	 (col_old (org-table-current-column))
-	 (contents (mapcar (lambda (p)
+	 (contents (mapcar (lambda (_)
 			     (let ((tp table))
 			       (mapcar
-				(lambda (rown)
+				(lambda (_)
 				  (prog1
 				      (pop (car tp))
 				    (setq tp (cdr tp))))
@@ -2016,9 +2024,9 @@ it can be edited in place."
 			      '(invisible t org-cwidth t display t
 					  intangible t))
       (goto-char p)
-      (org-set-local 'org-finish-function 'org-table-finish-edit-field)
-      (org-set-local 'org-window-configuration cw)
-      (org-set-local 'org-field-marker pos)
+      (setq-local org-finish-function 'org-table-finish-edit-field)
+      (setq-local org-window-configuration cw)
+      (setq-local org-field-marker pos)
       (message "Edit and finish with C-c C-c")))))
 
 (defun org-table-finish-edit-field ()
@@ -2185,16 +2193,11 @@ When NAMED is non-nil, look for a named equation."
 			    org-table-named-field-locations)))
 	 (ref (format "@%d$%d" (org-table-current-dline)
 		      (org-table-current-column)))
-	 (refass (assoc ref stored-list))
-	 (nameass (assoc name stored-list))
 	 (scol (if named
 		   (if (and name (not (string-match "^LR[0-9]+$" name)))
 		       name
 		     ref)
 		 (int-to-string (org-table-current-column))))
-	 (dummy (and (or nameass refass) (not named)
-		     (not (y-or-n-p "Replace existing field formula with column formula? " ))
-		     (message "Formula not replaced")))
 	 (name (or name ref))
 	 (org-table-may-need-update nil)
 	 (stored (cdr (assoc scol stored-list)))
@@ -2788,11 +2791,12 @@ not overwrite the stored one."
 		(replace-match
 		 (save-match-data
 		   (org-table-make-reference
-		    (org-sublist fields
-				 (+ (if (match-end 2) n0 0)
-				    (string-to-number (match-string 1 form)))
-				 (+ (if (match-end 4) n0 0)
-				    (string-to-number (match-string 3 form))))
+		    (cl-subseq fields
+			       (+ (if (match-end 2) n0 0)
+				  (string-to-number (match-string 1 form))
+				  -1)
+			       (+ (if (match-end 4) n0 0)
+				  (string-to-number (match-string 3 form))))
 		    keep-empty numbers lispp))
 		 t t form)))
 	(setq form0 form)
@@ -3029,7 +3033,7 @@ search, as a string."
 KEEP-EMPTY indicated to keep empty fields, default is to skip them.
 NUMBERS indicates that everything should be converted to numbers.
 LISPP non-nil means to return something appropriate for a Lisp
-list, 'literal is for the format specifier L."
+list, `literal' is for the format specifier L."
   ;; Calc nan (not a number) is used for the conversion of the empty
   ;; field to a reference for several reasons: (i) It is accepted in a
   ;; Calc formula (e. g. "" or "()" would result in a Calc error).
@@ -3384,7 +3388,7 @@ formulas that use a range of rows or columns, it may often be better
 to anchor the formula with \"I\" row markers, or to offset from the
 borders of the table using the @< @> $< $> makers."
   (let (n nmax len char (start 0))
-    (while (string-match "\\([@$]\\)\\(<+\\|>+\\)\\|\\(remote([^\)]+)\\)"
+    (while (string-match "\\([@$]\\)\\(<+\\|>+\\)\\|\\(remote([^)]+)\\)"
 			 s start)
       (if (match-end 3)
 	  (setq start (match-end 3))
@@ -3522,10 +3526,10 @@ Parameters get priority."
     ;; Keep global-font-lock-mode from turning on font-lock-mode
     (let ((font-lock-global-modes '(not fundamental-mode)))
       (fundamental-mode))
-    (org-set-local 'font-lock-global-modes (list 'not major-mode))
-    (org-set-local 'org-pos pos)
-    (org-set-local 'org-window-configuration wc)
-    (org-set-local 'org-selected-window sel-win)
+    (setq-local font-lock-global-modes (list 'not major-mode))
+    (setq-local org-pos pos)
+    (setq-local org-window-configuration wc)
+    (setq-local org-selected-window sel-win)
     (use-local-map org-table-fedit-map)
     (org-add-hook 'post-command-hook #'org-table-fedit-post-command t t)
     (easy-menu-add org-table-fedit-menu)
@@ -3549,8 +3553,10 @@ Parameters get priority."
     (when (eq org-table-use-standard-references t)
       (org-table-fedit-toggle-ref-type))
     (org-goto-line startline)
-    (message "Edit formulas, finish with `C-c C-c' or `C-c ' '.  \
-See menu for more commands.")))
+    (message
+     (substitute-command-keys "\\<org-mode-map>\
+Edit formulas, finish with `\\[org-ctrl-c-ctrl-c]' or `\\[org-edit-special]'.  \
+See menu for more commands."))))
 
 (defun org-table-fedit-post-command ()
   (when (not (memq this-command '(lisp-complete-symbol)))
@@ -3698,7 +3704,7 @@ minutes or seconds."
 (defun org-table-fedit-toggle-ref-type ()
   "Convert all references in the buffer from B3 to @3$2 and back."
   (interactive)
-  (org-set-local 'org-table-buffer-is-an (not org-table-buffer-is-an))
+  (setq-local org-table-buffer-is-an (not org-table-buffer-is-an))
   (org-table-fedit-convert-buffer
    (if org-table-buffer-is-an
        'org-table-convert-refs-to-an 'org-table-convert-refs-to-rc))
@@ -4097,16 +4103,15 @@ FACE, when non-nil, for the highlight."
     (goto-char (car start-coordinates)))
   (add-hook 'before-change-functions #'org-table-remove-rectangle-highlight))
 
-(defun org-table-remove-rectangle-highlight (&rest ignore)
+(defun org-table-remove-rectangle-highlight (&rest _ignore)
   "Remove the rectangle overlays."
   (unless org-inhibit-highlight-removal
     (remove-hook 'before-change-functions 'org-table-remove-rectangle-highlight)
     (mapc 'delete-overlay org-table-rectangle-overlays)
     (setq org-table-rectangle-overlays nil)))
 
-(defvar org-table-coordinate-overlays nil
+(defvar-local org-table-coordinate-overlays nil
   "Collects the coordinate grid overlays, so that they can be removed.")
-(make-variable-buffer-local 'org-table-coordinate-overlays)
 
 (defun org-table-overlay-coordinates ()
   "Add overlays to the table at point, to show row/column coordinates."
@@ -4223,12 +4228,12 @@ FACE, when non-nil, for the highlight."
       ;; FIXME: maybe it should use emulation-mode-map-alists?
       (and c (setq minor-mode-map-alist
                    (cons c (delq c minor-mode-map-alist)))))
-    (org-set-local (quote org-table-may-need-update) t)
+    (setq-local org-table-may-need-update t)
     (org-add-hook 'before-change-functions 'org-before-change-function
                   nil 'local)
-    (org-set-local 'org-old-auto-fill-inhibit-regexp
+    (setq-local org-old-auto-fill-inhibit-regexp
                    auto-fill-inhibit-regexp)
-    (org-set-local 'auto-fill-inhibit-regexp
+    (setq-local auto-fill-inhibit-regexp
                    (if auto-fill-inhibit-regexp
                        (concat orgtbl-line-start-regexp "\\|"
                                auto-fill-inhibit-regexp)
@@ -4471,7 +4476,7 @@ With prefix arg, also recompute table."
      (t (let (orgtbl-mode)
 	  (call-interactively (key-binding "\C-c\C-c")))))))
 
-(defun orgtbl-create-or-convert-from-region (arg)
+(defun orgtbl-create-or-convert-from-region (_arg)
   "Create table or convert region to table, if no conflicting binding.
 This installs the table binding `C-c |', but only if there is no
 conflicting binding to this key outside orgtbl-mode."
@@ -4772,72 +4777,87 @@ This may be either a string or a function of two arguments:
   example \"%s\\\\times10^{%s}\".  This may also be a property
   list with column numbers and format strings or functions.
   :fmt will still be applied after :efmt."
-  (let ((backend (plist-get params :backend))
-	;; Disable user-defined export filters and hooks.
-	(org-export-filters-alist nil)
-	(org-export-before-parsing-hook nil)
-	(org-export-before-processing-hook nil))
-    (when (and backend (symbolp backend) (not (org-export-get-backend backend)))
-      (user-error "Unknown :backend value"))
-    (when (or (not backend) (plist-get params :raw)) (require 'ox-org))
-    ;; Remove final newline.
-    (substring
-     (org-export-string-as
-      ;; Return TABLE as Org syntax.  Tolerate non-string cells.
-      (with-output-to-string
+  ;; Make sure `org-export-create-backend' is available.
+  (require 'ox)
+  (let* ((backend (plist-get params :backend))
+	 (custom-backend
+	  ;; Build a custom back-end according to PARAMS.  Before
+	  ;; defining a translator, check if there is anything to do.
+	  ;; When there isn't, let BACKEND handle the element.
+	  (org-export-create-backend
+	   :parent (or backend 'org)
+	   :transcoders
+	   `((table . ,(org-table--to-generic-table params))
+	     (table-row . ,(org-table--to-generic-row params))
+	     (table-cell . ,(org-table--to-generic-cell params))
+	     ;; Macros are not going to be expanded.  However, no
+	     ;; regular back-end has a transcoder for them.  We
+	     ;; provide one so they are not ignored, but displayed
+	     ;; as-is instead.
+	     (macro . (lambda (m c i) (org-element-macro-interpreter m nil))))))
+	 data info)
+    ;; Store TABLE as Org syntax in DATA.  Tolerate non-string cells.
+    ;; Initialize communication channel in INFO.
+    (with-temp-buffer
+      (let ((org-inhibit-startup t)) (org-mode))
+      (let ((standard-output (current-buffer)))
 	(dolist (e table)
 	  (cond ((eq e 'hline) (princ "|--\n"))
 		((consp e)
 		 (princ "| ") (dolist (c e) (princ c) (princ " |"))
 		 (princ "\n")))))
-      ;; Build a custom back-end according to PARAMS.  Before defining
-      ;; a translator, check if there is anything to do.  When there
-      ;; isn't, let BACKEND handle the element.
-      (org-export-create-backend
-       :parent (or backend 'org)
-       :filters
-       '((:filter-parse-tree
-	  ;; Handle :skip parameter.
-	  (lambda (tree backend info)
-	    (let ((skip (plist-get info :skip)))
-	      (when skip
-		(unless (wholenump skip) (user-error "Wrong :skip value"))
-		(let ((n 0))
-		  (org-element-map tree 'table-row
-		    (lambda (row)
-		      (if (>= n skip) t
-			(org-element-extract-element row)
-			(incf n)
-			nil))
-		    info t))
-		tree)))
-	  ;; Handle :skipcols parameter.
-	  (lambda (tree backend info)
-	    (let ((skipcols (plist-get info :skipcols)))
-	      (when skipcols
-		(unless (consp skipcols) (user-error "Wrong :skipcols value"))
-		(org-element-map tree 'table
-		  (lambda (table)
-		    (let ((specialp
-			   (org-export-table-has-special-column-p table)))
-		      (dolist (row (org-element-contents table))
-			(when (eq (org-element-property :type row) 'standard)
-			  (let ((c 1))
-			    (dolist (cell (nthcdr (if specialp 1 0)
-						  (org-element-contents row)))
-			      (when (memq c skipcols)
-				(org-element-extract-element cell))
-			      (incf c)))))))
-		  info)
-		tree)))))
-       :transcoders
-       `((table . ,(org-table--to-generic-table params))
-	 (table-row . ,(org-table--to-generic-row params))
-	 (table-cell . ,(org-table--to-generic-cell params))
-	 ;; Section.  Return contents to avoid garbage around table.
-	 (section . (lambda (s c i) c))))
-      'body-only (org-combine-plists params '(:with-tables t)))
-     0 -1)))
+      (setq data
+	    (org-element-map (org-element-parse-buffer) 'table
+	      #'identity nil t))
+      (setq info (org-export-get-environment backend nil params)))
+    (when (and backend (symbolp backend) (not (org-export-get-backend backend)))
+      (user-error "Unknown :backend value"))
+    (when (or (not backend) (plist-get info :raw)) (require 'ox-org))
+    ;; Handle :skip parameter.
+    (let ((skip (plist-get info :skip)))
+      (when skip
+	(unless (wholenump skip) (user-error "Wrong :skip value"))
+	(let ((n 0))
+	  (org-element-map data 'table-row
+	    (lambda (row)
+	      (if (>= n skip) t
+		(org-element-extract-element row)
+		(incf n)
+		nil))
+	    nil t))))
+    ;; Handle :skipcols parameter.
+    (let ((skipcols (plist-get info :skipcols)))
+      (when skipcols
+	(unless (consp skipcols) (user-error "Wrong :skipcols value"))
+	(org-element-map data 'table
+	  (lambda (table)
+	    (let ((specialp (org-export-table-has-special-column-p table)))
+	      (dolist (row (org-element-contents table))
+		(when (eq (org-element-property :type row) 'standard)
+		  (let ((c 1))
+		    (dolist (cell (nthcdr (if specialp 1 0)
+					  (org-element-contents row)))
+		      (when (memq c skipcols)
+			(org-element-extract-element cell))
+		      (incf c))))))))))
+    ;; Since we are going to export using a low-level mechanism,
+    ;; ignore special column and special rows manually.
+    (let ((special? (org-export-table-has-special-column-p data))
+	  ignore)
+      (org-element-map data (if special? '(table-cell table-row) 'table-row)
+	(lambda (datum)
+	  (when (if (eq (org-element-type datum) 'table-row)
+		    (org-export-table-row-is-special-p datum nil)
+		  (org-export-first-sibling-p datum nil))
+	    (push datum ignore))))
+      (setq info (plist-put info :ignore-list ignore)))
+    ;; We use a low-level mechanism to export DATA so as to skip all
+    ;; usual pre-processing and post-processing, i.e., hooks, filters,
+    ;; Babel code evaluation, include keywords and macro expansion,
+    ;; and filters.
+    (let ((output (org-export-data-with-backend data custom-backend info)))
+      ;; Remove final newline.
+      (if (org-string-nw-p output) (substring-no-properties output 0 -1) ""))))
 
 (defun org-table--generic-apply (value name &optional with-cons &rest args)
   (cond ((null value) nil)
@@ -5392,16 +5412,13 @@ This function is generated by a call to the macro `org-define-lookup-function'."
 			      (sl s-list)
 			      (rl (or r-list s-list))
 			      (ret nil))))
-		 (if first-p (add-to-list 'lvars '(match-p nil)))
-		 lvars)
+		 (if first-p (cons '(match-p nil) lvars) lvars))
 	   (while ,(if first-p '(and (not match-p) sl) 'sl)
-	     (progn
-	       (if (funcall p val (car sl))
-		   (progn
-		     ,(if first-p '(setq match-p t))
-		     (let ((rval (car rl)))
-		       (setq ret ,(if all-p '(append ret (list rval)) 'rval)))))
-	       (setq sl (cdr sl) rl (cdr rl))))
+	     (when (funcall p val (car sl))
+	       ,(when first-p '(setq match-p t))
+	       (let ((rval (car rl)))
+		 (setq ret ,(if all-p '(append ret (list rval)) 'rval))))
+	     (setq sl (cdr sl) rl (cdr rl)))
 	   ret)))))
 
 (org-define-lookup-function first)

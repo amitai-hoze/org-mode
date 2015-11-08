@@ -1,4 +1,4 @@
-;;; ob-perl.el --- org-babel functions for perl evaluation
+;;; ob-perl.el --- Babel Functions for Perl          -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
@@ -54,7 +54,7 @@ This function is called by `org-babel-execute-src-block'."
      (org-babel-pick-name
       (cdr (assoc :rowname-names params)) (cdr (assoc :rownames params))))))
 
-(defun org-babel-prep-session:perl (session params)
+(defun org-babel-prep-session:perl (_session _params)
   "Prepare SESSION according to the header arguments in PARAMS."
   (error "Sessions are not supported for Perl"))
 
@@ -63,7 +63,7 @@ This function is called by `org-babel-execute-src-block'."
   (mapcar
    (lambda (pair)
      (org-babel-perl--var-to-perl (cdr pair) (car pair)))
-   (mapcar #'cdr (org-babel-get-header params :var))))
+   (org-babel--get-vars params)))
 
 ;; helper functions
 
@@ -76,7 +76,7 @@ This function is called by `org-babel-execute-src-block'."
 The elisp value, VAR, is converted to a string of perl source code
 specifying a var of the same value."
   (if varn
-      (let ((org-babel-perl--lvl 0) (lvar (listp var)) prefix)
+      (let ((org-babel-perl--lvl 0) (lvar (listp var)))
 	(concat "my $" (symbol-name varn) "=" (when lvar "\n")
 		(org-babel-perl--var-to-perl var)
 		";\n"))
@@ -92,7 +92,7 @@ specifying a var of the same value."
 
 (defvar org-babel-perl-buffers '(:default . nil))
 
-(defun org-babel-perl-initiate-session (&optional session params)
+(defun org-babel-perl-initiate-session (&optional _session _params)
   "Return nil because sessions are not supported by perl."
   nil)
 
@@ -127,8 +127,8 @@ specifying a var of the same value."
 
 (defun org-babel-perl-evaluate (session ibody &optional result-type result-params)
   "Pass BODY to the Perl process in SESSION.
-If RESULT-TYPE equals 'output then return a list of the outputs
-of the statements in BODY, if RESULT-TYPE equals 'value then
+If RESULT-TYPE equals `output' then return a list of the outputs
+of the statements in BODY, if RESULT-TYPE equals `value' then
 return the value of the last statement in BODY, as elisp."
   (when session (error "Sessions are not supported for Perl"))
   (let* ((body (concat org-babel-perl-preface ibody))

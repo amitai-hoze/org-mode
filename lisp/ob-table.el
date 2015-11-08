@@ -1,4 +1,4 @@
-;;; ob-table.el --- support for calling org-babel functions from tables
+;;; ob-table.el --- Support for Calling Babel Functions from Tables -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
@@ -94,7 +94,7 @@ the header argument which can then be passed before all variables
 as shown in the example below.
 
 | 1 | 2 | :file nothing.png | nothing.png |
-#+TBLFM: @1$4='(org-sbe test-sbe $3 (x $1) (y $2))"
+#+TBLFM: @1$4=\\='(org-sbe test-sbe $3 (x $1) (y $2))"
   (declare (debug (form form)))
   (let* ((header-args (if (stringp (car variables)) (car variables) ""))
 	 (variables (if (stringp (car variables)) (cdr variables) variables)))

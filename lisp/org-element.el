@@ -118,6 +118,7 @@
 
 (require 'org)
 (require 'avl-tree)
+(require 'cl-lib)
 
 
 
@@ -333,7 +334,7 @@ This list is checked after translations have been applied.  See
 	   ;; Regular affiliated keywords.
 	   (format "\\(?1:%s\\)"
 		   (regexp-opt
-		    (org-remove-if
+		    (cl-remove-if
 		     (lambda (k) (member k org-element-dual-keywords))
 		     org-element-affiliated-keywords)))
 	   "\\|"
@@ -1898,7 +1899,7 @@ containing `:begin', `:end', `:number-lines', `:preserve-indent',
 		 (post-affiliated (point))
 		 (block-ind (progn (skip-chars-forward " \t") (current-column)))
 		 (contents-begin (progn (forward-line) (point)))
-		 (value (org-element-remove-indentation
+		 (value (org-remove-indentation
 			 (org-unescape-code-in-string
 			  (buffer-substring-no-properties
 			   contents-begin contents-end))
@@ -1933,7 +1934,7 @@ containing `:begin', `:end', `:number-lines', `:preserve-indent',
 	      (if (or org-src-preserve-indentation
 		      (org-element-property :preserve-indent example-block))
 		  value
-		(org-element-remove-indentation value))))
+		(org-remove-indentation value))))
 	    "#+END_EXAMPLE")))
 
 
@@ -2404,7 +2405,7 @@ Assume point is at the beginning of the block."
 		 ;; Indentation.
 		 (block-ind (progn (skip-chars-forward " \t") (current-column)))
 		 ;; Retrieve code.
-		 (value (org-element-remove-indentation
+		 (value (org-remove-indentation
 			 (org-unescape-code-in-string
 			  (buffer-substring-no-properties
 			   (progn (forward-line) (point)) contents-end))
@@ -3099,13 +3100,13 @@ Assume point is at the beginning of the link."
 	(when (string-match "::\\(.*\\)\\'" path)
 	  (setq search-option (match-string 1 path))
 	  (setq path (replace-match "" nil nil path)))
-	(setq path (replace-regexp-in-string "\\`/+" "/" path)))
+	(setq path (replace-regexp-in-string "\\`///+" "/" path)))
       ;; Translate link, if `org-link-translation-function' is set.
       (let ((trans (and (functionp org-link-translation-function)
 			(funcall org-link-translation-function type path))))
 	(when trans
 	  (setq type (car trans))
-	 (setq path (cdr trans))))
+	  (setq path (cdr trans))))
       (list 'link
 	    (list :type type
 		  :path path
@@ -3849,8 +3850,9 @@ position of point and CDR is nil."
 		(and dualp
 		     (let ((sec (org-match-string-no-properties 2)))
 		       (if (or (not sec) (not parsedp)) sec
-			 (org-element--parse-objects
-			  (match-beginning 2) (match-end 2) nil restrict)))))
+			 (save-match-data
+			   (org-element--parse-objects
+			    (match-beginning 2) (match-end 2) nil restrict))))))
 	       ;; Attribute a property name to KWD.
 	       (kwd-sym (and kwd (intern (concat ":" (downcase kwd))))))
 	  ;; Now set final shape for VALUE.
@@ -3963,7 +3965,7 @@ If STRING is the empty string or nil, return nil."
 	  (dolist (v local-variables)
 	    (ignore-errors
 	      (if (symbolp v) (makunbound v)
-		(org-set-local (car v) (cdr v)))))
+		(set (make-local-variable (car v)) (cdr v)))))
 	  (insert string)
 	  (restore-buffer-modified-p nil)
 	  (let ((data (org-element--parse-objects
@@ -4009,30 +4011,30 @@ Assuming TREE is a variable containing an Org buffer parse tree,
 the following example will return a flat list of all `src-block'
 and `example-block' elements in it:
 
-  \(org-element-map tree '(example-block src-block) #'identity)
+  (org-element-map tree \\='(example-block src-block) #\\='identity)
 
 The following snippet will find the first headline with a level
 of 1 and a \"phone\" tag, and will return its beginning position:
 
-  \(org-element-map tree 'headline
-   \(lambda (hl)
-     \(and (= (org-element-property :level hl) 1)
-          \(member \"phone\" (org-element-property :tags hl))
-          \(org-element-property :begin hl)))
+  (org-element-map tree \\='headline
+   (lambda (hl)
+     (and (= (org-element-property :level hl) 1)
+          (member \"phone\" (org-element-property :tags hl))
+          (org-element-property :begin hl)))
    nil t)
 
 The next example will return a flat list of all `plain-list' type
 elements in TREE that are not a sub-list themselves:
 
-  \(org-element-map tree 'plain-list #'identity nil nil 'plain-list)
+  (org-element-map tree \\='plain-list #\\='identity nil nil \\='plain-list)
 
 Eventually, this example will return a flat list of all `bold'
 type objects containing a `latex-snippet' type object, even
 looking into captions:
 
-  \(org-element-map tree 'bold
-   \(lambda (b)
-     \(and (org-element-map b 'latex-snippet #'identity nil t) b))
+  (org-element-map tree \\='bold
+   (lambda (b)
+     (and (org-element-map b \\='latex-snippet #\\='identity nil t) b))
    nil nil nil t)"
   ;; Ensure TYPES and NO-RECURSION are a list, even of one element.
   (let* ((types (if (listp types) types (list types)))
@@ -4149,6 +4151,7 @@ otherwise.  Modes can be either `first-section', `item',
   (if parentp
       (pcase type
 	(`headline 'section)
+	(`inlinetask 'planning)
 	(`plain-list 'item)
 	(`property-drawer 'node-property)
 	(`section 'planning)
@@ -4874,6 +4877,7 @@ This function assumes `org-element--cache' is a valid AVL tree."
 (defsubst org-element--cache-active-p ()
   "Non-nil when cache is active in current buffer."
   (and org-element-use-cache
+       org-element--cache
        (or (derived-mode-p 'org-mode) orgstruct-mode)))
 
 (defun org-element--cache-find (pos &optional side)
@@ -5586,15 +5590,16 @@ buffers."
   (interactive "P")
   (dolist (buffer (if all (buffer-list) (list (current-buffer))))
     (with-current-buffer buffer
-      (when (org-element--cache-active-p)
-	(org-set-local 'org-element--cache
-		       (avl-tree-create #'org-element--cache-compare))
-	(org-set-local 'org-element--cache-objects (make-hash-table :test #'eq))
-	(org-set-local 'org-element--cache-sync-keys
+      (when (and org-element-use-cache
+		 (or (derived-mode-p 'org-mode) orgstruct-mode))
+	(setq-local org-element--cache
+		    (avl-tree-create #'org-element--cache-compare))
+	(setq-local org-element--cache-objects (make-hash-table :test #'eq))
+	(setq-local org-element--cache-sync-keys
 		       (make-hash-table :weakness 'key :test #'eq))
-	(org-set-local 'org-element--cache-change-warning nil)
-	(org-set-local 'org-element--cache-sync-requests nil)
-	(org-set-local 'org-element--cache-sync-timer nil)
+	(setq-local org-element--cache-change-warning nil)
+	(setq-local org-element--cache-sync-requests nil)
+	(setq-local org-element--cache-sync-timer nil)
 	(add-hook 'before-change-functions
 		  #'org-element--cache-before-change nil t)
 	(add-hook 'after-change-functions
@@ -5951,35 +5956,9 @@ end of ELEM-A."
 	  (move-overlay (car o) (- (nth 1 o) offset) (- (nth 2 o) offset))))
       (goto-char (org-element-property :end elem-B)))))
 
-(defun org-element-remove-indentation (s &optional n)
-  "Remove maximum common indentation in string S and return it.
-When optional argument N is a positive integer, remove exactly
-that much characters from indentation, if possible, or return
-S as-is otherwise.  Unlike to `org-remove-indentation', this
-function doesn't call `untabify' on S."
-  (catch 'exit
-    (with-temp-buffer
-      (insert s)
-      (goto-char (point-min))
-      ;; Find maximum common indentation, if not specified.
-      (setq n (or n
-                  (let ((min-ind (point-max)))
-		    (save-excursion
-		      (while (re-search-forward "^[ \t]*\\S-" nil t)
-			(let ((ind (1- (current-column))))
-			  (if (zerop ind) (throw 'exit s)
-			    (setq min-ind (min min-ind ind))))))
-		    min-ind)))
-      (if (zerop n) s
-	;; Remove exactly N indentation, but give up if not possible.
-	(while (not (eobp))
-	  (let ((ind (progn (skip-chars-forward " \t") (current-column))))
-	    (cond ((eolp) (delete-region (line-beginning-position) (point)))
-		  ((< ind n) (throw 'exit s))
-		  (t (org-indent-line-to (- ind n))))
-	    (forward-line)))
-	(buffer-string)))))
-
+;; For backward-compatibility with Org <= 8.3
+(define-obsolete-function-alias
+  'org-element-remove-indentation 'org-remove-indentation "25.1")
 
 
 (provide 'org-element)

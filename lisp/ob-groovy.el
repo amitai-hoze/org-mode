@@ -1,4 +1,4 @@
-;;; ob-groovy.el --- org-babel functions for Groovy evaluation
+;;; ob-groovy.el --- Babel Functions for Groovy      -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2013-2015 Free Software Foundation, Inc.
 
@@ -51,7 +51,6 @@ called by `org-babel-execute-src-block'"
   (message "executing Groovy source code block")
   (let* ((processed-params (org-babel-process-params params))
          (session (org-babel-groovy-initiate-session (nth 0 processed-params)))
-         (vars (nth 1 processed-params))
          (result-params (nth 2 processed-params))
          (result-type (cdr (assoc :result-type params)))
          (full-body (org-babel-expand-body:generic
@@ -80,8 +79,8 @@ println(new Runner().run())
 (defun org-babel-groovy-evaluate
   (session body &optional result-type result-params)
   "Evaluate BODY in external Groovy process.
-If RESULT-TYPE equals 'output then return standard output as a string.
-If RESULT-TYPE equals 'value then return the value of the last statement
+If RESULT-TYPE equals `output' then return standard output as a string.
+If RESULT-TYPE equals `value' then return the value of the last statement
 in BODY as elisp."
   (when session (error "Sessions are not (yet) supported for Groovy"))
   (case result-type
@@ -101,11 +100,11 @@ in BODY as elisp."
            (org-babel-script-escape raw)))))))
 
 
-(defun org-babel-prep-session:groovy (session params)
+(defun org-babel-prep-session:groovy (_session _params)
   "Prepare SESSION according to the header arguments specified in PARAMS."
   (error "Sessions are not (yet) supported for Groovy"))
 
-(defun org-babel-groovy-initiate-session (&optional session)
+(defun org-babel-groovy-initiate-session (&optional _session)
   "If there is not a current inferior-process-buffer in SESSION
 then create.  Return the initialized session.  Sessions are not
 supported in Groovy."

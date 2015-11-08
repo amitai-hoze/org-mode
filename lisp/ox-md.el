@@ -1,4 +1,4 @@
-;;; ox-md.el --- Markdown Back-End for Org Export Engine
+;;; ox-md.el --- Markdown Back-End for Org Export Engine -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2012-2015 Free Software Foundation, Inc.
 
@@ -95,7 +95,7 @@ This variable can be set to either `atx' or `setext'."
 
 ;;; Filters
 
-(defun org-md-separate-elements (tree backend info)
+(defun org-md-separate-elements (tree _backend info)
   "Fix blank lines between elements.
 
 TREE is the parse tree being exported.  BACKEND is the export
@@ -107,7 +107,8 @@ to this rule:
   1. Preserve blank lines between sibling items in a plain list,
 
   2. In an item, remove any blank line before the very first
-     paragraph and the next sub-list.
+     paragraph and the next sub-list when the latter ends the
+     current item.
 
 Assume BACKEND is `md'."
   (org-element-map tree (remq 'item org-element-all-elements)
@@ -116,9 +117,10 @@ Assume BACKEND is `md'."
        e :post-blank
        (if (and (eq (org-element-type e) 'paragraph)
 		(eq (org-element-type (org-element-property :parent e)) 'item)
-		(eq (org-element-type (org-export-get-next-element e info))
-		    'plain-list)
-		(not (org-export-get-previous-element e info)))
+		(org-export-first-sibling-p e info)
+		(let ((next (org-export-get-next-element e info)))
+		  (and (eq (org-element-type next) 'plain-list)
+		       (not (org-export-get-next-element next info)))))
 	   0
 	 1))))
   ;; Return updated tree.
@@ -130,7 +132,7 @@ Assume BACKEND is `md'."
 
 ;;;; Bold
 
-(defun org-md-bold (bold contents info)
+(defun org-md-bold (_bold contents _info)
   "Transcode BOLD object into Markdown format.
 CONTENTS is the text within bold markup.  INFO is a plist used as
 a communication channel."
@@ -139,7 +141,7 @@ a communication channel."
 
 ;;;; Code and Verbatim
 
-(defun org-md-verbatim (verbatim contents info)
+(defun org-md-verbatim (verbatim _contents _info)
   "Transcode VERBATIM object into Markdown format.
 CONTENTS is nil.  INFO is a plist used as a communication
 channel."
@@ -154,7 +156,7 @@ channel."
 
 ;;;; Example Block, Src Block and export Block
 
-(defun org-md-example-block (example-block contents info)
+(defun org-md-example-block (example-block _contents info)
   "Transcode EXAMPLE-BLOCK element into Markdown format.
 CONTENTS is nil.  INFO is a plist used as a communication
 channel."
@@ -196,8 +198,9 @@ a communication channel."
 		   (and char (format "[#%c] " char)))))
 	   (anchor
 	    (and (plist-get info :with-toc)
-		 (org-html--anchor
-		  (org-export-get-reference headline info) nil nil info)))
+		 (format "<a id=\"%s\"></a>"
+			 (or (org-element-property :CUSTOM_ID headline)
+			     (org-export-get-reference headline info)))))
 	   ;; Headline text without tags.
 	   (heading (concat todo priority title))
 	   (style (plist-get info :md-headline-style)))
@@ -213,7 +216,7 @@ a communication channel."
 			  (car (last (org-export-get-headline-number
 				      headline info))))
 			 "."))))
-	  (concat bullet (make-string (- 4 (length bullet)) ? ) heading tags
+	  (concat bullet (make-string (- 4 (length bullet)) ?\s) heading tags
 		  "\n\n"
 		  (and contents
 		       (replace-regexp-in-string "^" "    " contents)))))
@@ -224,12 +227,13 @@ a communication channel."
 		"\n\n"
 		contents))
        ;; Use "atx" style.
-       (t (concat (make-string level ?#) " " heading tags anchor "\n\n" contents))))))
+       (t (concat (make-string level ?#) " " heading tags anchor "\n\n"
+		  contents))))))
 
 
 ;;;; Horizontal Rule
 
-(defun org-md-horizontal-rule (horizontal-rule contents info)
+(defun org-md-horizontal-rule (_horizontal-rule _contents _info)
   "Transcode HORIZONTAL-RULE element into Markdown format.
 CONTENTS is the horizontal rule contents.  INFO is a plist used
 as a communication channel."
@@ -238,7 +242,7 @@ as a communication channel."
 
 ;;;; Italic
 
-(defun org-md-italic (italic contents info)
+(defun org-md-italic (_italic contents _info)
   "Transcode ITALIC object into Markdown format.
 CONTENTS is the text within italic markup.  INFO is a plist used
 as a communication channel."
@@ -287,7 +291,7 @@ channel."
 
 ;;;; Line Break
 
-(defun org-md-line-break (line-break contents info)
+(defun org-md-line-break (_line-break _contents _info)
   "Transcode LINE-BREAK object into Markdown format.
 CONTENTS is nil.  INFO is a plist used as a communication
 channel."
@@ -301,33 +305,50 @@ channel."
 CONTENTS is the link's description.  INFO is a plist used as
 a communication channel."
   (let ((link-org-files-as-md
-	 (function
-	  (lambda (raw-path)
-	    ;; Treat links to `file.org' as links to `file.md'.
-	    (if (string= ".org" (downcase (file-name-extension raw-path ".")))
-		(concat (file-name-sans-extension raw-path) ".md")
-	      raw-path))))
+	 (lambda (raw-path)
+	   ;; Treat links to `file.org' as links to `file.md'.
+	   (if (string= ".org" (downcase (file-name-extension raw-path ".")))
+	       (concat (file-name-sans-extension raw-path) ".md")
+	     raw-path)))
 	(type (org-element-property :type link)))
     (cond
      ;; Link type is handled by a special function.
      ((org-export-custom-protocol-maybe link contents 'md))
-     ((member type '("custom-id" "id"))
-      (let ((destination (org-export-resolve-id-link link info)))
-	(if (stringp destination)	; External file.
-	    (let ((path (funcall link-org-files-as-md destination)))
-	      (if (not contents) (format "<%s>" path)
-		(format "[%s](%s)" contents path)))
-	  (concat
-	   (and contents (concat contents " "))
-	   (format "(%s)"
-		   (format (org-export-translate "See section %s" :html info)
-			   (if (org-export-numbered-headline-p destination info)
-			       (mapconcat #'number-to-string
-					  (org-export-get-headline-number
-					   destination info)
-					  ".")
-			     (org-export-data
-			      (org-element-property :title destination) info))))))))
+     ((member type '("custom-id" "id" "fuzzy"))
+      (let ((destination (if (string= type "fuzzy")
+			     (org-export-resolve-fuzzy-link link info)
+			   (org-export-resolve-id-link link info))))
+	(case (org-element-type destination)
+	  (plain-text			; External file.
+	   (let ((path (funcall link-org-files-as-md destination)))
+	     (if (not contents) (format "<%s>" path)
+	       (format "[%s](%s)" contents path))))
+	  (headline
+	   (format
+	    "[%s](#%s)"
+	    ;; Description.
+	    (cond ((org-string-nw-p contents))
+		  ((org-export-numbered-headline-p destination info)
+		   (mapconcat #'number-to-string
+			      (org-export-get-headline-number destination info)
+			      "."))
+		  (t (org-export-data (org-element-property :title destination)
+				      info)))
+	    ;; Reference.
+	    (or (org-element-property :CUSTOM_ID destination)
+		(org-export-get-reference destination info))))
+	  (t
+	   (let ((description
+		  (or (org-string-nw-p contents)
+		      (let ((number (org-export-get-ordinal destination info)))
+			(cond
+			 ((not number) nil)
+			 ((atom number) (number-to-string number))
+			 (t (mapconcat #'number-to-string number ".")))))))
+	     (when description
+	       (format "[%s](#%s)"
+		       description
+		       (org-export-get-reference destination info))))))))
      ((org-export-inline-image-p link org-html-inline-image-rules)
       (let ((path (let ((raw-path (org-element-property :path link)))
 		    (if (not (file-name-absolute-p raw-path)) raw-path
@@ -343,19 +364,6 @@ a communication channel."
 	(format (org-export-get-coderef-format ref contents)
 		(org-export-resolve-coderef ref info))))
      ((equal type "radio") contents)
-     ((equal type "fuzzy")
-      (let ((destination (org-export-resolve-fuzzy-link link info)))
-	(if (org-string-nw-p contents) contents
-	  (when destination
-	    (let ((number (org-export-get-ordinal destination info)))
-	      (if number
-		  (if (atom number) (number-to-string number)
-		    (mapconcat #'number-to-string number "."))
-		;; Unnumbered headline.
-		(and (eq 'headline (org-element-type destination))
-		     ;; BUG: shouldn't headlines have a form like [ref](name) in md?
-		     (org-export-data
-		      (org-element-property :title destination) info))))))))
      (t (let* ((raw-path (org-element-property :path link))
 	       (path
 		(cond
@@ -370,7 +378,7 @@ a communication channel."
 
 ;;;; Node Property
 
-(defun org-md-node-property (node-property contents info)
+(defun org-md-node-property (node-property _contents _info)
   "Transcode a NODE-PROPERTY element into Markdown syntax.
 CONTENTS is nil.  INFO is a plist holding contextual
 information."
@@ -382,7 +390,7 @@ information."
 
 ;;;; Paragraph
 
-(defun org-md-paragraph (paragraph contents info)
+(defun org-md-paragraph (paragraph contents _info)
   "Transcode PARAGRAPH element into Markdown format.
 CONTENTS is the paragraph contents.  INFO is a plist used as
 a communication channel."
@@ -395,7 +403,7 @@ a communication channel."
 
 ;;;; Plain List
 
-(defun org-md-plain-list (plain-list contents info)
+(defun org-md-plain-list (_plain-list contents _info)
   "Transcode PLAIN-LIST element into Markdown format.
 CONTENTS is the plain-list contents.  INFO is a plist used as
 a communication channel."
@@ -430,7 +438,7 @@ contextual information."
 
 ;;;; Property Drawer
 
-(defun org-md-property-drawer (property-drawer contents info)
+(defun org-md-property-drawer (_property-drawer contents _info)
   "Transcode a PROPERTY-DRAWER element into Markdown format.
 CONTENTS holds the contents of the drawer.  INFO is a plist
 holding contextual information."
@@ -440,7 +448,7 @@ holding contextual information."
 
 ;;;; Quote Block
 
-(defun org-md-quote-block (quote-block contents info)
+(defun org-md-quote-block (_quote-block contents _info)
   "Transcode QUOTE-BLOCK element into Markdown format.
 CONTENTS is the quote-block contents.  INFO is a plist used as
 a communication channel."
@@ -451,7 +459,7 @@ a communication channel."
 
 ;;;; Section
 
-(defun org-md-section (section contents info)
+(defun org-md-section (_section contents _info)
   "Transcode SECTION element into Markdown format.
 CONTENTS is the section contents.  INFO is a plist used as
 a communication channel."
@@ -468,7 +476,7 @@ holding export options."
   ;; footnotes with at least a blank line.
   (org-trim (org-html-inner-template (concat "\n" contents "\n") info)))
 
-(defun org-md-template (contents info)
+(defun org-md-template (contents _info)
   "Return complete document string after Markdown conversion.
 CONTENTS is the transcoded contents string.  INFO is a plist used
 as a communication channel."

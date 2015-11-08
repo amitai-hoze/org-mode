@@ -1,4 +1,4 @@
-;;; ob-scheme.el --- org-babel functions for Scheme
+;;; ob-scheme.el --- Babel Functions for Scheme      -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2010-2015 Free Software Foundation, Inc.
 
@@ -55,7 +55,7 @@
 
 (defun org-babel-expand-body:scheme (body params)
   "Expand BODY according to PARAMS, return the expanded body."
-  (let ((vars (mapcar #'cdr (org-babel-get-header params :var))))
+  (let ((vars (org-babel--get-vars params)))
     (if (> (length vars) 0)
         (concat "(let ("
                 (mapconcat
@@ -109,7 +109,7 @@ For a named session, the buffer name will be the session name.
 
 If the session is unnamed (nil), generate a name.
 
-If the session is 'none', use nil for the session name, and
+If the session is `none', use nil for the session name, and
 org-babel-scheme-execute-with-geiser will use a temporary session."
   (let ((result
 	 (cond ((not name)

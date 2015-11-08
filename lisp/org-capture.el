@@ -433,8 +433,8 @@ for a capture buffer.")
 
 Turning on this mode runs the normal hook `org-capture-mode-hook'."
   nil " Rem" org-capture-mode-map
-  (org-set-local
-   'header-line-format
+  (setq-local
+   header-line-format
    (substitute-command-keys
     "\\<org-capture-mode-map>Capture buffer.  Finish \\[org-capture-finalize], \
 refile \\[org-capture-refile], abort \\[org-capture-kill].")))
@@ -462,7 +462,7 @@ For example, if you have a capture template \"c\" and you want
 this template to be accessible only from `message-mode' buffers,
 use this:
 
-   '((\"c\" ((in-mode . \"message-mode\"))))
+   \\='((\"c\" ((in-mode . \"message-mode\"))))
 
 Here are the available contexts definitions:
 
@@ -480,7 +480,7 @@ accessible if there is at least one valid check.
 You can also bind a key to another agenda custom command
 depending on contextual rules.
 
-    '((\"c\" \"d\" ((in-mode . \"message-mode\"))))
+    \\='((\"c\" \"d\" ((in-mode . \"message-mode\"))))
 
 Here it means: in `message-mode buffers', use \"c\" as the
 key for the capture template otherwise associated with \"d\".
@@ -615,7 +615,7 @@ of the day at point (if any) or the current HH:MM time."
 			(org-capture-put :interrupted-clock
 					 (copy-marker org-clock-marker)))
 		    (org-clock-in)
-		    (org-set-local 'org-capture-clock-was-started t))
+		    (setq-local org-capture-clock-was-started t))
 		(error
 		 "Could not start the clock in this capture buffer")))
 	  (if (org-capture-get :immediate-finish)
@@ -792,7 +792,10 @@ already gone.  Any prefix argument will be passed to the refile command."
      "Refiling from a capture buffer makes only sense for `entry'-type templates"))
   (let ((pos (point))
 	(base (buffer-base-buffer (current-buffer)))
-	(org-refile-for-capture t))
+	(org-refile-for-capture t)
+	(kill-buffer (org-capture-get :kill-buffer 'local)))
+    (org-capture-put :kill-buffer nil)
+    (org-capture-finalize)
     (save-window-excursion
       (with-current-buffer (or base (current-buffer))
 	(save-excursion
@@ -800,7 +803,7 @@ already gone.  Any prefix argument will be passed to the refile command."
 	    (widen)
 	    (goto-char pos)
 	    (call-interactively 'org-refile)))))
-    (org-capture-finalize)))
+    (when kill-buffer (kill-buffer base))))
 
 (defun org-capture-kill ()
   "Abort the current capture process."
@@ -993,7 +996,7 @@ a string, return it.  However, if it is the empty string, return
 (defun org-capture-steal-local-variables (buffer)
   "Install Org-mode local variables of BUFFER."
   (mapc (lambda (v)
-	  (ignore-errors (org-set-local (car v) (cdr v))))
+	  (ignore-errors (set (make-local-variable (car v)) (cdr v))))
 	(buffer-local-variables buffer)))
 
 (defun org-capture-place-template (&optional inhibit-wconf-store)
@@ -1006,11 +1009,9 @@ may have been stored before."
   (org-switch-to-buffer-other-window
    (org-capture-get-indirect-buffer (org-capture-get :buffer) "CAPTURE"))
   (widen)
-  (show-all)
+  (outline-show-all)
   (goto-char (org-capture-get :pos))
-  (org-set-local 'org-capture-target-marker
-		 (point-marker))
-  (org-set-local 'outline-level 'org-outline-level)
+  (setq-local outline-level 'org-outline-level)
   (let* ((template (org-capture-get :template))
 	 (type (org-capture-get :type)))
     (case type
@@ -1020,7 +1021,7 @@ may have been stored before."
       (item (org-capture-place-item))
       (checkitem (org-capture-place-item))))
   (org-capture-mode 1)
-  (org-set-local 'org-capture-current-plist org-capture-plist))
+  (setq-local org-capture-current-plist org-capture-plist))
 
 (defun org-capture-place-entry ()
   "Place the template as a new Org entry."
@@ -1610,7 +1611,7 @@ The template may still contain \"%?\" for cursor positioning."
 	    (delete-region start end)
 	    (condition-case error
 		(insert-file-contents filename)
-	      (error (insert (format "%%![Couldn't insert %s: %s]"
+	      (error (insert (format "%%![Couldn not insert %s: %s]"
 				     filename error)))))))
 
       ;; The current time

@@ -1,4 +1,4 @@
-;;; ob-ruby.el --- org-babel functions for ruby evaluation
+;;; ob-ruby.el --- Babel Functions for Ruby          -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
@@ -121,7 +121,7 @@ This function is called by `org-babel-execute-src-block'."
      (format "%s=%s"
 	     (car pair)
 	     (org-babel-ruby-var-to-ruby (cdr pair))))
-   (mapcar #'cdr (org-babel-get-header params :var))))
+   (org-babel--get-vars params)))
 
 (defun org-babel-ruby-var-to-ruby (var)
   "Convert VAR into a ruby variable.
@@ -144,7 +144,7 @@ Emacs-lisp table, otherwise return the results as a string."
                 res)
       res)))
 
-(defun org-babel-ruby-initiate-session (&optional session params)
+(defun org-babel-ruby-initiate-session (&optional session _params)
   "Initiate a ruby session.
 If there is not a current inferior-process-buffer in SESSION
 then create one.  Return the initialized session."
@@ -187,8 +187,8 @@ end
 (defun org-babel-ruby-evaluate
   (buffer body &optional result-type result-params)
   "Pass BODY to the Ruby process in BUFFER.
-If RESULT-TYPE equals 'output then return a list of the outputs
-of the statements in BODY, if RESULT-TYPE equals 'value then
+If RESULT-TYPE equals `output' then return a list of the outputs
+of the statements in BODY, if RESULT-TYPE equals `value' then
 return the value of the last statement in BODY, as elisp."
   (if (not buffer)
       ;; external process evaluation

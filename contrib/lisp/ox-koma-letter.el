@@ -439,7 +439,8 @@ e.g. \"title-subject:t\"."
     (:inbuffer-with-backaddress nil "backaddress" 'koma-letter:empty)
     (:inbuffer-with-email nil "email" 'koma-letter:empty)
     (:inbuffer-with-foldmarks nil "foldmarks" 'koma-letter:empty)
-    (:inbuffer-with-phone nil "phone" 'koma-letter:empty))
+    (:inbuffer-with-phone nil "phone" 'koma-letter:empty)
+    (:inbuffer-with-place nil "place" 'koma-letter:empty))
   :translate-alist '((export-block . org-koma-letter-export-block)
 		     (export-snippet . org-koma-letter-export-snippet)
 		     (headline . org-koma-letter-headline)
@@ -615,8 +616,10 @@ holding export options."
    ;; Time-stamp.
    (and (plist-get info :time-stamp-file)
         (format-time-string "%% Created %Y-%m-%d %a %H:%M\n"))
+   ;; LaTeX compiler
+   (org-latex--insert-compiler info)
    ;; Document class and packages.
-   (org-latex--make-header info)
+   (org-latex--make-preamble info)
    ;; Settings.  They can come from three locations, in increasing
    ;; order of precedence: global variables, LCO files and in-buffer
    ;; settings.  Thus, we first insert settings coming from global
@@ -745,9 +748,13 @@ a communication channel."
           (format "\\KOMAoption{backaddress}{%s}\n"
                   (if (plist-get info :with-backaddress) "true" "false")))
      ;; Place.
-     (and (funcall check-scope 'place)
-          (format "\\setkomavar{place}{%s}\n"
-                  (if (plist-get info :with-place) (plist-get info :place) "")))
+     (let ((with-place-set (funcall check-scope 'with-place))
+	   (place-set (funcall check-scope 'place)))
+       (and (or (and with-place-set place-set)
+		(and (eq scope 'buffer) (or with-place-set place-set)))
+	    (format "\\setkomavar{place}{%s}\n"
+		    (if (plist-get info :with-place) (plist-get info :place)
+		      ""))))
      ;; Folding marks.
      (and (funcall check-scope 'with-foldmarks)
           (let ((foldmarks (plist-get info :with-foldmarks)))

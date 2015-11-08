@@ -1,4 +1,4 @@
-;;; ob-python.el --- org-babel functions for python evaluation
+;;; ob-python.el --- Babel Functions for Python      -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
@@ -50,7 +50,7 @@
 (defcustom org-babel-python-mode
   (if (or (featurep 'xemacs) (featurep 'python-mode)) 'python-mode 'python)
   "Preferred python mode for use in running python interactively.
-This will typically be either 'python or 'python-mode."
+This will typically be either `python' or `python-mode'."
   :group 'org-babel
   :version "24.4"
   :package-version '(Org . "8.0")
@@ -64,7 +64,7 @@ This will typically be either 'python or 'python-mode."
   :type 'string)
 
 (defcustom org-babel-python-None-to 'hline
-  "Replace 'None' in python tables with this before returning."
+  "Replace `None' in python tables with this before returning."
   :group 'org-babel
   :version "24.4"
   :package-version '(Org . "8.0")
@@ -125,7 +125,7 @@ VARS contains resolved variable references"
      (format "%s=%s"
 	     (car pair)
 	     (org-babel-python-var-to-python (cdr pair))))
-   (mapcar #'cdr (org-babel-get-header params :var))))
+   (org-babel--get-vars params)))
 
 (defun org-babel-python-var-to-python (var)
   "Convert an elisp value to a python variable.
@@ -216,7 +216,7 @@ then create.  Return the initialized session."
 		  (assq-delete-all session org-babel-python-buffers)))
       session)))
 
-(defun org-babel-python-initiate-session (&optional session params)
+(defun org-babel-python-initiate-session (&optional session _params)
   "Create a session named SESSION according to PARAMS."
   (unless (string= session "none")
     (org-babel-python-session-buffer
@@ -250,8 +250,8 @@ open('%s', 'w').write( pprint.pformat(main()) )")
 (defun org-babel-python-evaluate-external-process
   (body &optional result-type result-params preamble)
   "Evaluate BODY in external python process.
-If RESULT-TYPE equals 'output then return standard output as a
-string.  If RESULT-TYPE equals 'value then return the value of the
+If RESULT-TYPE equals `output' then return standard output as a
+string.  If RESULT-TYPE equals `value' then return the value of the
 last statement in BODY, as elisp."
   (let ((raw
          (case result-type
@@ -282,8 +282,8 @@ last statement in BODY, as elisp."
 (defun org-babel-python-evaluate-session
     (session body &optional result-type result-params)
   "Pass BODY to the Python process in SESSION.
-If RESULT-TYPE equals 'output then return standard output as a
-string.  If RESULT-TYPE equals 'value then return the value of the
+If RESULT-TYPE equals `output' then return standard output as a
+string.  If RESULT-TYPE equals `value' then return the value of the
 last statement in BODY, as elisp."
   (let* ((send-wait (lambda () (comint-send-input nil t) (sleep-for 0 5)))
 	 (dump-last-value
@@ -334,7 +334,7 @@ last statement in BODY, as elisp."
         (org-babel-python-table-or-string results)))))
 
 (defun org-babel-python-read-string (string)
-  "Strip 's from around Python string."
+  "Strip \\='s from around Python string."
   (if (string-match "^'\\([^\000]+\\)'$" string)
       (match-string 1 string)
     string))

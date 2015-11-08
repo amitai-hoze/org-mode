@@ -25,6 +25,7 @@
 ;;; Code:
 (eval-when-compile
   (require 'cl))
+(require 'cl-lib)
 (require 'ob-eval)
 (require 'org-macs)
 (require 'org-compat)
@@ -37,10 +38,8 @@
 (defvar org-babel-call-process-region-original nil)
 (defvar org-src-lang-modes)
 (defvar org-babel-library-of-babel)
-(declare-function show-all "outline" ())
-(declare-function org-every "org" (pred seq))
+(declare-function outline-show-all "outline" ())
 (declare-function org-remove-indentation "org" (code &optional n))
-(declare-function org-reduce "org" (CL-FUNC CL-SEQ &rest CL-KEYS))
 (declare-function org-mark-ring-push "org" (&optional pos buffer))
 (declare-function tramp-compat-make-temp-file "tramp-compat"
                   (filename &optional dir-flag))
@@ -90,7 +89,6 @@
 (declare-function org-list-struct "org-list" ())
 (declare-function org-list-prevs-alist "org-list" (struct))
 (declare-function org-list-get-list-end "org-list" (item struct prevs))
-(declare-function org-remove-if "org" (predicate seq))
 (declare-function org-completing-read "org" (&rest args))
 (declare-function org-escape-code-in-region "org-src" (beg end))
 (declare-function org-unescape-code-in-string "org-src" (s))
@@ -100,7 +98,6 @@
 (declare-function org-element-type "org-element" (element))
 (declare-function org-element-at-point "org-element" ())
 (declare-function org-element-property "org-element" (property element))
-(declare-function org-every "org" (pred seq))
 (declare-function org-macro-escape-arguments "org-macro" (&rest args))
 
 (defgroup org-babel nil
@@ -110,6 +107,7 @@
 
 (defcustom org-confirm-babel-evaluate t
   "Confirm before evaluation.
+\\<org-mode-map>\
 Require confirmation before interactively evaluating code
 blocks in Org-mode buffers.  The default value of this variable
 is t, meaning confirmation is required for any code block
@@ -122,10 +120,11 @@ execution or nil if no prompt is required.
 
 Warning: Disabling confirmation may result in accidental
 evaluation of potentially harmful code.  It may be advisable
-remove code block execution from C-c C-c as further protection
+remove code block execution from \\[org-ctrl-c-ctrl-c] \
+as further protection
 against accidental code block evaluation.  The
 `org-babel-no-eval-on-ctrl-c-ctrl-c' variable can be used to
-remove code block execution from the C-c C-c keybinding."
+remove code block execution from the \\[org-ctrl-c-ctrl-c] keybinding."
   :group 'org-babel
   :version "24.1"
   :type '(choice boolean function))
@@ -133,7 +132,8 @@ remove code block execution from the C-c C-c keybinding."
 (put 'org-confirm-babel-evaluate 'safe-local-variable (lambda (x) (eq x t)))
 
 (defcustom org-babel-no-eval-on-ctrl-c-ctrl-c nil
-  "Remove code block evaluation from the C-c C-c key binding."
+  "\\<org-mode-map>\
+Remove code block evaluation from the \\[org-ctrl-c-ctrl-c] key binding."
   :group 'org-babel
   :version "24.1"
   :type 'boolean)
@@ -209,14 +209,14 @@ This string must include a \"%s\" which will be replaced by the results."
    "{\\([^\f\n\r\v]+?\\)}\\)")
   "Regexp used to identify inline src-blocks.")
 
-(defun org-babel-get-header (params key &optional others)
-  "Select only header argument of type KEY from a list.
-Optional argument OTHERS indicates that only the header that do
-not match KEY should be returned."
-  (delq nil
-	(mapcar
-	 (lambda (p) (when (funcall (if others #'not #'identity) (eq (car p) key)) p))
-	 params)))
+(defun org-babel--get-vars (params)
+  "Return the babel variable assignments in PARAMS.
+
+PARAMS is a quasi-alist of header args, whcih may contain
+multiple entries for the key `:var'.  This function returns a
+list of the cdr of all the `:var' entries."
+  (mapcar #'cdr
+	  (cl-remove-if-not (lambda (x) (eq (car x) :var)) params)))
 
 (defun org-babel-get-inline-src-block-matches ()
   "Set match data if within body of an inline source block.
@@ -281,57 +281,50 @@ Returns a list
 This is used by Babel to resolve references in source blocks.
 Its value is dynamically bound during export.")
 
-(defmacro org-babel-check-confirm-evaluate (info &rest body)
-  "Evaluate BODY with special execution confirmation variables set.
+(defun org-babel-check-confirm-evaluate (info)
+  "Check whether INFO allows code block evaluation.
 
-Specifically; NOEVAL will indicate if evaluation is allowed,
-QUERY will indicate if a user query is required, CODE-BLOCK will
-hold the language of the code block, and BLOCK-NAME will hold the
-name of the code block."
-  (declare (indent defun))
-  (org-with-gensyms
-      (lang block-body headers name head eval eval-no export eval-no-export)
-    `(let* ((,lang           (nth 0 ,info))
-	    (,block-body     (nth 1 ,info))
-	    (,headers        (nth 2 ,info))
-	    (,name           (nth 4 ,info))
-	    (,head           (nth 6 ,info))
-	    (,eval           (or (cdr  (assoc :eval   ,headers))
-				 (when (assoc :noeval ,headers) "no")))
-	    (,eval-no        (or (equal ,eval "no")
-				 (equal ,eval "never")))
-	    (,export         org-babel-exp-reference-buffer)
-	    (,eval-no-export (and ,export (or (equal ,eval "no-export")
-					      (equal ,eval "never-export"))))
-	    (noeval          (or ,eval-no ,eval-no-export))
-	    (query           (or (equal ,eval "query")
-				 (and ,export (equal ,eval "query-export"))
-				 (if (functionp org-confirm-babel-evaluate)
-				     (save-excursion
-				       (goto-char ,head)
-				       (funcall org-confirm-babel-evaluate
-						,lang ,block-body))
-				   org-confirm-babel-evaluate)))
-	    (code-block      (if ,info (format  " %s "  ,lang) " "))
-	    (block-name      (if ,name (format " (%s) " ,name) " ")))
-       ,@body)))
+Returns nil if evaluation is disallowed, t if it is
+unconditionally allowed, and the symbol `query' if the user
+should be asked whether to allow evaluation."
+  (let* ((headers (nth 2 info))
+	 (eval (or (cdr  (assq :eval headers))
+		   (when (assq :noeval headers) "no")))
+	 (eval-no (member eval '("no" "never")))
+	 (export org-babel-exp-reference-buffer)
+	 (eval-no-export (and export (member eval '("no-export" "never-export"))))
+	 (noeval (or eval-no eval-no-export))
+	 (query (or (equal eval "query")
+		    (and export (equal eval "query-export"))
+		    (if (functionp org-confirm-babel-evaluate)
+			(save-excursion
+			  (goto-char (nth 6 info))
+			  (funcall org-confirm-babel-evaluate
+				   ;; language, code block body
+				   (nth 0 info) (nth 1 info)))
+		      org-confirm-babel-evaluate))))
+    (cond
+     (noeval nil)
+     (query 'query)
+     (t t))))
 
-(defsubst org-babel-check-evaluate (info)
+(defun org-babel-check-evaluate (info)
   "Check if code block INFO should be evaluated.
-Do not query the user."
-  (org-babel-check-confirm-evaluate info
-    (not (when noeval
-	   (message "Evaluation of this%scode-block%sis disabled."
-                    code-block block-name)))))
 
- ;; dynamically scoped for asynchronous export
+Do not query the user, but do display an informative message if
+evaluation is blocked.  Returns non-nil if evaluation is not blocked."
+  (let ((evalp (org-babel-check-confirm-evaluate info)))
+    (when (null evalp)
+      (message "Evaluation of this %s code-block%sis disabled."
+	       (nth 0 info)
+	       (let ((name (nth 4 info))) (if name (format " (%s) " name) ""))))
+    evalp))
+
+;; Dynamically scoped for asynchronous export.
 (defvar org-babel-confirm-evaluate-answer-no)
 
-(defsubst org-babel-confirm-evaluate (info)
+(defun org-babel-confirm-evaluate (info)
   "Confirm evaluation of the code block INFO.
-
-If the variable `org-babel-confirm-evaluate-answer-no' is bound
-to a non-nil value, auto-answer with \"no\".
 
 This query can also be suppressed by setting the value of
 `org-confirm-babel-evaluate' to nil, in which case all future
@@ -339,17 +332,29 @@ interactive code block evaluations will proceed without any
 confirmation from the user.
 
 Note disabling confirmation may result in accidental evaluation
-of potentially harmful code."
-  (org-babel-check-confirm-evaluate info
-    (not (when query
-	   (unless
+of potentially harmful code.
+
+The variable `org-babel-confirm-evaluate-answer-no' is used by
+the async export process, which requires a non-interactive
+environment, to override this check."
+  (let* ((evalp (org-babel-check-confirm-evaluate info))
+	 (lang (nth 0 info))
+	 (name (nth 4 info))
+	 (name-string (if name (format " (%s) " name) " ")))
+    (pcase evalp
+      (`nil nil)
+      (`t t)
+      (`query (or
 	       (and (not (org-bound-and-true-p
 			  org-babel-confirm-evaluate-answer-no))
 		    (yes-or-no-p
-		     (format "Evaluate this%scode block%son your system? "
-			     code-block block-name)))
-	     (message "Evaluation of this%scode-block%sis aborted."
-                      code-block block-name))))))
+		     (format "Evaluate this %s code block%son your system? "
+			     lang name-string)))
+	       (progn
+		(message "Evaluation of this %s code-block%sis aborted."
+			 lang name-string)
+		nil)))
+      (x (error "Unexpected value `%s' from `org-babel-check-confirm-evaluate'" x)))))
 
 ;;;###autoload
 (defun org-babel-execute-safely-maybe ()
@@ -511,7 +516,7 @@ The list can have entries of the following forms:
   "Return a function that determines whether a list of header args are safe.
 
 Intended usage is:
-\(put 'org-babel-default-header-args 'safe-local-variable
+\(put \\='org-babel-default-header-args \\='safe-local-variable
  (org-babel-header-args-safe-p org-babel-safe-header-args)
 
 This allows org-babel languages to extend the list of safe values for
@@ -520,7 +525,7 @@ their `org-babel-default-header-args:foo' variable.
 For the format of SAFE-LIST, see `org-babel-safe-header-args'."
   `(lambda (value)
      (and (listp value)
-	  (org-every
+	  (cl-every
 	   (lambda (pair)
 	     (and (consp pair)
 		  (org-babel-one-header-arg-safe-p pair ,safe-list)))
@@ -555,7 +560,7 @@ be saved in the second match data.")
 
 (defvar org-babel-result-w-name-regexp
   (concat org-babel-result-regexp
-	  "\\([^ ()\f\t\n\r\v]+\\)\\(\(\\(.*\\)\)\\|\\)"))
+	  "\\([^ ()\f\t\n\r\v]+\\)\\((\\(.*\\))\\|\\)"))
 
 (defvar org-babel-min-lines-for-block-output 10
   "The minimum number of lines for block output.
@@ -636,15 +641,13 @@ block."
 		   (match-beginning 0))))
 	 (info (if info
 		   (copy-tree info)
-		 (org-babel-get-src-block-info)))
-	 (merged-params (org-babel-merge-params (nth 2 info) params)))
-    (when (org-babel-check-evaluate
-	   (let ((i info)) (setf (nth 2 i) merged-params) i))
-      (let* ((params (if params
-			 (org-babel-process-params merged-params)
-		       (nth 2 info)))
+		 (org-babel-get-src-block-info))))
+    (cl-callf org-babel-merge-params (nth 2 info) params)
+    (when (org-babel-check-evaluate info)
+      (cl-callf org-babel-process-params (nth 2 info))
+      (let* ((params (nth 2 info))
 	     (cachep (and (not arg) (cdr (assoc :cache params))
-			   (string= "yes" (cdr (assoc :cache params)))))
+			  (string= "yes" (cdr (assoc :cache params)))))
 	     (new-hash (when cachep (org-babel-sha1-hash info)))
 	     (old-hash (when cachep (org-babel-current-result-hash)))
 	     (cache-current-p (and (not arg) new-hash
@@ -658,8 +661,7 @@ block."
 	    (let ((result (org-babel-read-result)))
 	      (message (replace-regexp-in-string
 			"%" "%%" (format "%S" result))) result)))
-	 ((org-babel-confirm-evaluate
-	   (let ((i info)) (setf (nth 2 i) merged-params) i))
+	 ((org-babel-confirm-evaluate info)
 	  (let* ((lang (nth 0 info))
 		 (result-params (cdr (assoc :result-params params)))
 		 (body (setf (nth 1 info)
@@ -809,7 +811,7 @@ arguments and pop open the results in a preview buffer."
 	(let ((header (car arg-pair))
 	      (args (cdr arg-pair)))
 	  (setq results
-		(cons arg-pair (org-remove-if
+		(cons arg-pair (cl-remove-if
 				(lambda (pair) (equal header (car pair)))
 				results))))))
     results))
@@ -1309,8 +1311,9 @@ the `org-mode-hook'."
 
 (defun org-babel-hash-at-point (&optional point)
   "Return the value of the hash at POINT.
+\\<org-mode-map>\
 The hash is also added as the last element of the kill ring.
-This can be called with C-c C-c."
+This can be called with \\[org-ctrl-c-ctrl-c]."
   (interactive)
   (let ((hash (car (delq nil (mapcar
 			      (lambda (ol) (overlay-get ol 'babel-hash))
@@ -1521,7 +1524,7 @@ instances of \"[ \t]:\" set ALTS to '((32 9) . 58)."
   (let ((last= (lambda (str) (= ch (aref str (1- (length str))))))
 	(first= (lambda (str) (= ch (aref str 0)))))
     (reverse
-     (org-reduce (lambda (acc el)
+     (cl-reduce (lambda (acc el)
 		   (let ((head (car acc)))
 		     (if (and head (or (funcall last= head) (funcall first= el)))
 			 (cons (concat head el) (cdr acc))
@@ -1564,10 +1567,10 @@ shown below.
 (defun org-babel-process-params (params)
   "Expand variables in PARAMS and add summary parameters."
   (let* ((processed-vars (mapcar (lambda (el)
-				   (if (consp (cdr el))
-				       (cdr el)
-				     (org-babel-ref-parse (cdr el))))
-				 (org-babel-get-header params :var)))
+				   (if (consp el)
+				       el
+				     (org-babel-ref-parse el)))
+				 (org-babel--get-vars params)))
 	 (vars-and-names (if (and (assoc :colname-names params)
 				  (assoc :rowname-names params))
 			     (list processed-vars)
@@ -1593,11 +1596,14 @@ shown below.
       (cons :result-type  (cond ((member "output" result-params) 'output)
 				((member "value" result-params) 'value)
 				(t 'value))))
-     (org-babel-get-header params :var 'other))))
+     (cl-remove-if
+      (lambda (x) (memq (car x) '(:colname-names :rowname-names :result-params
+						 :result-type :var)))
+      params))))
 
 ;; row and column names
 (defun org-babel-del-hlines (table)
-  "Remove all 'hlines from TABLE."
+  "Remove all `hlines' from TABLE."
   (remq 'hline table))
 
 (defun org-babel-get-colnames (table)
@@ -1750,7 +1756,7 @@ If the point is not on a source block then return nil."
     (if point
         ;; taken from `org-open-at-point'
         (progn (org-mark-ring-push) (goto-char point) (org-show-context))
-      (message "source-code block '%s' not found in this buffer" name))))
+      (message "source-code block `%s' not found in this buffer" name))))
 
 (defun org-babel-find-named-block (name)
   "Find a named source-code block.
@@ -1784,7 +1790,7 @@ to `org-babel-named-src-block-regexp'."
     (if point
         ;; taken from `org-open-at-point'
         (progn (goto-char point) (org-show-context))
-      (message "result '%s' not found in this buffer" name))))
+      (message "result `%s' not found in this buffer" name))))
 
 (defun org-babel-find-named-result (name &optional point)
   "Find a named result.
@@ -1985,6 +1991,39 @@ following the source block."
 	(beginning-of-line 0)
 	(when hash (org-babel-hide-hash))
 	(point)))))
+
+(defun org-babel-read-element (element)
+  "Read ELEMENT into emacs-lisp.
+Return nil if ELEMENT cannot be read."
+  (org-with-wide-buffer
+   (goto-char (org-element-property :post-affiliated element))
+   (pcase (org-element-type element)
+     (`fixed-width
+      (let ((v (org-babel-trim (org-element-property :value element))))
+	(or (org-babel-number-p v) v)))
+     (`table (org-babel-read-table))
+     (`plain-list (org-babel-read-list))
+     ((or `example-block `export-block)
+      (org-remove-indentation (org-element-property :value element)))
+     (`paragraph
+      ;; Treat paragraphs containing a single link specially.
+      (skip-chars-forward " \t")
+      (if (and (looking-at org-bracket-link-regexp)
+	       (save-excursion
+		 (goto-char (match-end 0))
+		 (skip-chars-forward " \r\t\n")
+		 (<= (org-element-property :end element)
+		     (point))))
+	  (org-babel-read-link)
+	(buffer-substring-no-properties
+	 (org-element-property :contents-begin element)
+	 (org-element-property :contents-end element))))
+     ((or `center-block `quote-block `verse-block `special-block)
+      (org-remove-indentation
+       (buffer-substring-no-properties
+	(org-element-property :contents-begin element)
+	(org-element-property :contents-end element))))
+     (_ nil))))
 
 (defvar org-block-regexp)
 (defun org-babel-read-result ()
@@ -2214,7 +2253,7 @@ INFO may provide the values of these header arguments (in the
 		       ;; a table.
 		       (and (listp r)
 			    (null (cdr (last r)))
-			    (org-every
+			    (cl-every
 			     (lambda (e) (or (atom e) (null (cdr (last e)))))
 			     result)))))
 		;; insert results based on type
@@ -2240,7 +2279,7 @@ INFO may provide the values of these header arguments (in the
 		 ((funcall tabulablep result)
 		  (goto-char beg)
 		  (insert (concat (orgtbl-to-orgtbl
-				   (if (org-every
+				   (if (cl-every
 					(lambda (e)
 					  (or (eq e 'hline) (listp e)))
 					result)
@@ -2405,7 +2444,7 @@ file's directory then expand relative links."
   'org-babel-examplify-region "25.1")
 
 (defun org-babel-examplify-region (beg end &optional results-switches)
-  "Comment out region using the inline '==' or ': ' org example quote."
+  "Comment out region using the inline `==' or `: ' org example quote."
   (interactive "*r")
   (let ((chars-between (lambda (b e)
 			 (not (string-match "^[\\s]*$"
@@ -2547,7 +2586,8 @@ parameters when merging lists."
 	       (setq params (cons pair (assq-delete-all (car pair) params)))))
 	    (:exports
 	     (setq exports (funcall e-merge exports-exclusive-groups
-				    exports (split-string (cdr pair)))))
+				    exports
+				    (split-string (or (cdr pair) "")))))
 	    (:tangle ;; take the latest -- always overwrite
 	     (setq tangle (or (list (cdr pair)) tangle)))
 	    (:noweb
@@ -2580,9 +2620,9 @@ parameters when merging lists."
 	(lambda (param)
 	  (when (assoc param params)
 	    (setf (cdr (assoc param params))
-		  (org-remove-if (lambda (pair) (equal (car pair) name))
+		  (cl-remove-if (lambda (pair) (equal (car pair) name))
 				 (cdr (assoc param params))))
-	    (setf params (org-remove-if (lambda (pair) (and (equal (car pair) param)
+	    (setf params (cl-remove-if (lambda (pair) (and (equal (car pair) param)
 						       (null (cdr pair))))
 					params))))
 	(list :colname-names :rowname-names)))
@@ -2620,7 +2660,7 @@ CONTEXT may be one of :tangle, :export or :eval."
   "Expand Noweb references in the body of the current source code block.
 
 For example the following reference would be replaced with the
-body of the source-code block named 'example-block'.
+body of the source-code block named `example-block'.
 
 <<example-block>>
 
@@ -2633,7 +2673,7 @@ This function must be called from inside of the buffer containing
 the source-code block which holds BODY.
 
 In addition the following syntax can be used to insert the
-results of evaluating the source-code block named 'example-block'.
+results of evaluating the source-code block named `example-block'.
 
 <<example-block()>>
 
@@ -2664,13 +2704,13 @@ block but are passed literally to the \"example-block\"."
 		     (org-babel-trim (buffer-string)))))
 	 index source-name evaluate prefix)
     (with-temp-buffer
-      (org-set-local 'org-babel-noweb-wrap-start ob-nww-start)
-      (org-set-local 'org-babel-noweb-wrap-end ob-nww-end)
+      (setq-local org-babel-noweb-wrap-start ob-nww-start)
+      (setq-local org-babel-noweb-wrap-end ob-nww-end)
       (insert body) (goto-char (point-min))
       (setq index (point))
       (while (and (re-search-forward (org-babel-noweb-wrap) nil t))
 	(save-match-data (setf source-name (match-string 1)))
-	(save-match-data (setq evaluate (string-match "\(.*\)" source-name)))
+	(save-match-data (setq evaluate (string-match "(.*)" source-name)))
 	(save-match-data
 	  (setq prefix
 		(buffer-substring (match-beginning 0)
@@ -2844,7 +2884,7 @@ block but are passed literally to the \"example-block\"."
 (defun org-babel-read (cell &optional inhibit-lisp-eval)
   "Convert the string value of CELL to a number if appropriate.
 Otherwise if CELL looks like lisp (meaning it starts with a
-\"(\", \"'\", \"\\=`\" or a \"[\") then read and evaluate it as
+\"(\", \"\\='\", \"\\=`\" or a \"[\") then read and evaluate it as
 lisp, otherwise return it unmodified as a string.  Optional
 argument INHIBIT-LISP-EVAL inhibits lisp evaluation for
 situations in which is it not appropriate."

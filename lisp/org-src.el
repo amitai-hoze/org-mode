@@ -1,4 +1,4 @@
-;;; org-src.el --- Source code examples in Org
+;;; org-src.el --- Source code examples in Org       -*- lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 2004-2015 Free Software Foundation, Inc.
 ;;
@@ -35,6 +35,7 @@
 (require 'ob-keys)
 (require 'ob-comint)
 (eval-when-compile (require 'cl))
+(require 'cl-lib)
 
 (declare-function org-base-buffer "org" (buffer))
 (declare-function org-do-remove-indentation "org" (&optional n))
@@ -49,11 +50,11 @@
 (declare-function org-get-indentation "org" (&optional line))
 (declare-function org-pop-to-buffer-same-window "org-compat"
 		  (&optional buffer-or-name norecord label))
-(declare-function org-some "org" (pred seq))
 (declare-function org-switch-to-buffer-other-window "org" (&rest args))
 (declare-function org-trim "org" (s))
 
 (defvar org-element-all-elements)
+(defvar org-inhibit-startup)
 
 (defcustom org-edit-src-turn-on-auto-save nil
   "Non-nil means turn `auto-save-mode' on when editing a source block.
@@ -447,14 +448,14 @@ Leave point in edit buffer."
 	;; Transmit buffer-local variables for exit function.  It must
 	;; be done after initializing major mode, as this operation
 	;; may reset them otherwise.
-	(org-set-local 'org-src--from-org-mode org-mode-p)
-	(org-set-local 'org-src--beg-marker beg)
-	(org-set-local 'org-src--end-marker end)
-	(org-set-local 'org-src--remote remote)
-	(org-set-local 'org-src--block-indentation ind)
-	(org-set-local 'org-src--preserve-indentation preserve-ind)
-	(org-set-local 'org-src--overlay overlay)
-	(org-set-local 'org-src--allow-write-back write-back)
+	(setq-local org-src--from-org-mode org-mode-p)
+	(setq-local org-src--beg-marker beg)
+	(setq-local org-src--end-marker end)
+	(setq-local org-src--remote remote)
+	(setq-local org-src--block-indentation ind)
+	(setq-local org-src--preserve-indentation preserve-ind)
+	(setq-local org-src--overlay overlay)
+	(setq-local org-src--allow-write-back write-back)
 	;; Start minor mode.
 	(org-src-mode)
 	;; Move mark and point in edit buffer to the corresponding
@@ -569,8 +570,8 @@ This minor mode is turned on in two situations:
 See also `org-src-mode-hook'."
   nil " OrgSrc" nil
   (when org-edit-src-persistent-message
-    (org-set-local
-     'header-line-format
+    (setq-local
+     header-line-format
      (substitute-command-keys
       (if org-src--allow-write-back
 	  "Edit, then exit with \\[org-edit-src-exit] or abort with \
@@ -657,9 +658,9 @@ This command is not bound to a key by default, to avoid conflicts
 with language major mode bindings.  To bind it to C-c @ in all
 language major modes, you could use
 
-  (add-hook 'org-src-mode-hook
+  (add-hook \\='org-src-mode-hook
             (lambda () (define-key org-src-mode-map \"\\C-c@\"
-                    'org-src-do-key-sequence-at-code-block)))
+                    \\='org-src-do-key-sequence-at-code-block)))
 
 In that case, for example, C-c @ t issued in code edit buffers
 would tangle the current Org code block, C-c @ e would execute
@@ -851,21 +852,20 @@ name of the sub-editing buffer."
 	    `(lambda ()
 	       (unless ,(or org-src-preserve-indentation
 			    (org-element-property :preserve-indent element))
-		 (untabify (point-min) (point-max))
 		 (when (> org-edit-src-content-indentation 0)
-		   (let ((ind (make-string org-edit-src-content-indentation
-					   ?\s)))
-		     (while (not (eobp))
-		       (unless (looking-at "[ \t]*$") (insert ind))
-		       (forward-line)))))
+		   (while (not (eobp))
+		     (unless (looking-at "[ \t]*$")
+		       (indent-line-to (+ (org-get-indentation)
+					  org-edit-src-content-indentation)))
+		     (forward-line))))
 	       (org-escape-code-in-region (point-min) (point-max))))
        (and code (org-unescape-code-in-string code)))
       ;; Finalize buffer.
-      (org-set-local 'org-coderef-label-format
-		     (or (org-element-property :label-fmt element)
-			 org-coderef-label-format))
+      (setq-local org-coderef-label-format
+		  (or (org-element-property :label-fmt element)
+		      org-coderef-label-format))
       (when (eq type 'src-block)
-	(org-set-local 'org-src--babel-info babel-info)
+	(setq-local org-src--babel-info babel-info)
 	(let ((edit-prep-func (intern (concat "org-babel-edit-prep:" lang))))
 	  (when (fboundp edit-prep-func)
 	    (funcall edit-prep-func babel-info))))
@@ -963,7 +963,7 @@ Throw an error if there is no such buffer."
       (goto-char beg)
       (cond
        ;; Block is hidden; move at start of block.
-       ((org-some (lambda (o) (eq (overlay-get o 'invisible) 'org-hide-block))
+       ((cl-some (lambda (o) (eq (overlay-get o 'invisible) 'org-hide-block))
 		  (overlays-at (point)))
 	(beginning-of-line 0))
        (write-back (org-src--goto-coordinates coordinates beg end))))

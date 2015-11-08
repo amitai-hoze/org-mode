@@ -138,7 +138,7 @@ Otherwise return nil."
 
 ;; FIXME: Slated for removal.  Current Org mode does not support Emacs < 22
 (defmacro org-maybe-intangible (props)
-  "Add '(intangible t) to PROPS if Emacs version is earlier than Emacs 22.
+  "Add \\='(intangible t) to PROPS if Emacs version is earlier than Emacs 22.
 In Emacs 21, invisible text is not avoided by the command loop, so the
 intangible property is needed to make sure point skips this text.
 In Emacs 22, this is not necessary.  The intangible text property has
@@ -241,10 +241,6 @@ program is needed for, so that the error message can be more informative."
 Some ops with invisible text do not work correctly on Emacs 21.  For these
 we turn off invisibility temporarily.  Use this in a `let' form."
   (if (< emacs-major-version 22) nil buffer-invisibility-spec))
-
-(defsubst org-set-local (var value)
-  "Make VAR local in current buffer and set it to VALUE."
-  (set (make-local-variable var) value))
 
 (defsubst org-last (list)
   "Return the last element of LIST."

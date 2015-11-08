@@ -104,10 +104,10 @@ t        : Disable auto-save-mode for the current buffer
 nil      : Leave auto-save-mode enabled.
            This may cause data to be written to disk unencrypted!
 
-'ask     : Ask user whether or not to disable auto-save-mode
+`ask'    : Ask user whether or not to disable auto-save-mode
            for the current buffer.
 
-'encrypt : Leave auto-save-mode enabled for the current buffer,
+`encrypt': Leave auto-save-mode enabled for the current buffer,
            but automatically re-encrypt all decrypted entries
            *before* auto-saving.
            NOTE: This only works for entries which have a tag
@@ -133,9 +133,10 @@ See `org-crypt-disable-auto-save'."
        (and
 	(eq org-crypt-disable-auto-save 'ask)
 	(y-or-n-p "org-decrypt: auto-save-mode may cause leakage.  Disable it for current buffer? ")))
-      (message (concat "org-decrypt: Disabling auto-save-mode for " (or (buffer-file-name) (current-buffer))))
-					; The argument to auto-save-mode has to be "-1", since
-					; giving a "nil" argument toggles instead of disabling.
+      (message "org-decrypt: Disabling auto-save-mode for %s"
+               (or (buffer-file-name) (current-buffer)))
+      ;; The argument to auto-save-mode has to be "-1", since
+      ;; giving a "nil" argument toggles instead of disabling.
       (auto-save-mode -1))
      ((eq org-crypt-disable-auto-save nil)
       (message "org-decrypt: Decrypting entry with auto-save-mode enabled.  This may cause leakage."))
@@ -163,7 +164,7 @@ See `org-crypt-disable-auto-save'."
   (if (and (string= crypt-key (get-text-property 0 'org-crypt-key str))
 	   (string= (sha1 str) (get-text-property 0 'org-crypt-checksum str)))
       (get-text-property 0 'org-crypt-text str)
-    (set (make-local-variable 'epg-context) (epg-make-context nil t t))
+    (setq-local epg-context (epg-make-context nil t t))
     (epg-encrypt-string epg-context str (epg-list-keys epg-context crypt-key))))
 
 (defun org-encrypt-entry ()
@@ -172,7 +173,7 @@ See `org-crypt-disable-auto-save'."
   (require 'epg)
   (save-excursion
     (org-back-to-heading t)
-    (set (make-local-variable 'epg-context) (epg-make-context nil t t))
+    (setq-local epg-context (epg-make-context nil t t))
     (let ((start-heading (point)))
       (forward-line)
       (when (not (looking-at "-----BEGIN PGP MESSAGE-----"))
@@ -190,7 +191,7 @@ See `org-crypt-disable-auto-save'."
           (insert encrypted-text)
           (when folded
             (goto-char start-heading)
-            (hide-subtree))
+            (outline-hide-subtree))
           nil)))))
 
 (defun org-decrypt-entry ()
@@ -208,7 +209,7 @@ See `org-crypt-disable-auto-save'."
 	(forward-line)
 	(when (looking-at "-----BEGIN PGP MESSAGE-----")
 	  (org-crypt-check-auto-save)
-          (set (make-local-variable 'epg-context) (epg-make-context nil t t))
+          (setq-local epg-context (epg-make-context nil t t))
 	  (let* ((end (save-excursion
 			(search-forward "-----END PGP MESSAGE-----")
 			(forward-line)
